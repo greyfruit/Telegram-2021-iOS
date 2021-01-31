@@ -22,6 +22,8 @@ import PersistentStringHash
 import GridMessageSelectionNode
 import AppBundle
 import Markdown
+import SwiftSignalKit
+import AudioBlob
 
 enum InternalBubbleTapAction {
     case action(() -> Void)
@@ -539,6 +541,439 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
         fatalError("init(coder:) has not been implemented")
     }
     
+    override func requireTransitionContainer() -> Bool {
+        return true
+    }
+    
+    override func animateInsertion(in transitionContainer: ASDisplayNode, completion: @escaping (Bool) -> Void) {
+        
+        func createFromPath(size: CGSize) -> UIBezierPath {
+            
+            let maxCornerRadius: CGFloat = 33.0 * 0.5
+            let topLeftRadius = maxCornerRadius
+            let topRightRadius = maxCornerRadius
+            let bottomLeftRadius = maxCornerRadius
+            let bottomRightRadius = maxCornerRadius
+            
+            let innerSize = size
+            
+            let insets: CGFloat = 0.5
+            
+            let fromPath = UIBezierPath()
+            fromPath.move(to: CGPoint(x: insets, y: topLeftRadius + insets))
+            fromPath.addArc(withCenter: CGPoint(x: topLeftRadius + insets, y: topLeftRadius + insets), radius: topLeftRadius, startAngle: CGFloat.pi, endAngle: (CGFloat.pi * 3)/2, clockwise: true)
+            
+            fromPath.addLine(to: CGPoint(x: innerSize.width - topRightRadius - insets, y: insets))
+            fromPath.addArc(withCenter: CGPoint(x: innerSize.width - topRightRadius - insets, y: topRightRadius + insets), radius: topRightRadius, startAngle: (CGFloat.pi * 3)/2, endAngle: CGFloat.pi * 2, clockwise: true)
+            
+            fromPath.addLine(to: CGPoint(x: innerSize.width - insets, y: innerSize.height - bottomRightRadius - insets))
+            fromPath.addLine(to: CGPoint(x: innerSize.width - insets, y: innerSize.height - bottomRightRadius - insets))
+            fromPath.addArc(withCenter: CGPoint(x: innerSize.width - bottomRightRadius - insets, y: innerSize.height - bottomRightRadius - insets), radius: bottomRightRadius, startAngle: (CGFloat.pi * 2), endAngle: (CGFloat.pi / 2), clockwise: true)
+            
+            fromPath.addLine(to: CGPoint(x: bottomLeftRadius + insets, y: innerSize.height - insets))
+            fromPath.addArc(withCenter: CGPoint(x: bottomLeftRadius + insets , y: innerSize.height - bottomLeftRadius - insets), radius: bottomLeftRadius, startAngle: (CGFloat.pi / 2), endAngle: .pi, clockwise: true)
+            fromPath.close()
+            
+            return fromPath
+        }
+        
+        func createToPath(size: CGSize) -> UIBezierPath {
+            
+            let innerSize = CGSize(
+                width: size.width - 6.0,
+                height: size.height
+            )
+            
+            let maxCornerRadius: CGFloat = 16.0
+            let minCornerRadius: CGFloat = 8.0
+            let topLeftRadius = maxCornerRadius
+            let topRightRadius = minCornerRadius
+            let bottomLeftRadius = maxCornerRadius
+            let bottomRightRadius = maxCornerRadius
+            let insets: CGFloat = 2.0
+            
+            let toPath = UIBezierPath()
+            
+            // Top left corner
+            toPath.move(to: CGPoint(x: insets, y: topLeftRadius + insets))
+            toPath.addArc(withCenter: CGPoint(x: topLeftRadius + insets, y: topLeftRadius + insets), radius: topLeftRadius, startAngle: CGFloat.pi, endAngle: (CGFloat.pi * 3)/2, clockwise: true)
+            // Top right corner
+            toPath.addLine(to: CGPoint(x: innerSize.width - topRightRadius - insets, y: insets))
+            toPath.addArc(withCenter: CGPoint(x: innerSize.width - topRightRadius - insets, y: topRightRadius + insets), radius: topRightRadius, startAngle: (CGFloat.pi * 3)/2, endAngle: CGFloat.pi * 2, clockwise: true)
+            // Bottom right tail
+            toPath.addLine(to: CGPoint(x: innerSize.width - insets, y: innerSize.height - minCornerRadius - insets))
+            toPath.addQuadCurve(to: CGPoint(x: size.width - insets - 1.0, y: size.height - insets), controlPoint: CGPoint(x: innerSize.width - insets, y: size.height - insets - 3.0))
+        //    toPath.addLine(to: CGPoint(x: innerSize.width - 7.0 - insets, y: innerSize.height - 2.0 - insets))
+            toPath.addQuadCurve(to: CGPoint(x: innerSize.width - 7.0 - insets, y: innerSize.height - 3.0 - insets), controlPoint: CGPoint(x: innerSize.width - 7.0 - insets + 1.5, y: innerSize.height - insets - 0.5))
+        //    toPath.addLine(to: CGPoint(x: innerSize.width - maxCornerRadius - insets, y: innerSize.height - insets))
+            toPath.addQuadCurve(to: CGPoint(x: innerSize.width - maxCornerRadius - insets, y: innerSize.height - insets), controlPoint: CGPoint(x: innerSize.width - 7.0 - insets - 1.5, y: innerSize.height - insets - 1.5))
+            // Bottom left corner
+            toPath.addLine(to: CGPoint(x: bottomLeftRadius + insets, y: innerSize.height - insets))
+            toPath.addArc(withCenter: CGPoint(x: bottomLeftRadius + insets, y: innerSize.height - bottomLeftRadius - insets), radius: bottomLeftRadius, startAngle: (CGFloat.pi / 2), endAngle: .pi, clockwise: true)
+            toPath.close()
+            
+            return toPath
+        }
+        
+        guard let item = self.item, let chatControllerNode = item.controllerInteraction.chatControllerNode() as? ChatControllerNode, let chatTransitionContext = chatControllerNode.chatTransitionContext else {
+            return completion(true)
+        }
+        
+        defer {
+            chatControllerNode.chatTransitionContext = nil
+        }
+        
+        if case ChatTransitionContext.audio(let audioNodeData) = chatTransitionContext {
+            
+            transitionContainer.addSubnode(self)
+            
+            let animationSettings = AnimationSettingsProvider.shared.voiceMessageAnimationSettings
+            let duration: TimeInterval = animationSettings.duration.duration
+            let positionXOptions = animationSettings.positionX
+            let positionYOptions = animationSettings.positionY
+            
+            let transitionContainer = chatControllerNode.presentTransitionContainer()
+            
+            let animationQueue = AnimationQueue {
+                chatControllerNode.dismissTransitionContainer()
+                audioNodeData.micButton.dismiss()
+                completion(true)
+            }
+            
+            if let audioBubbleContentNode = self.contentNodes.first as? ChatMessageFileBubbleContentNode, let audioBlobView = audioNodeData.micButton.micDecoration as? VoiceBlobView {
+                
+                let statusNodeWrapper = audioBubbleContentNode.interactiveFileNode.statusNodeWrapper
+                let fromFrame = audioBlobView.frame
+                let toFrame = statusNodeWrapper.layer.frame(in: transitionContainer.layer)
+                
+                animationQueue.enter()
+                audioBlobView.layer.transform = CATransform3DIdentity
+                audioBlobView.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration, removeOnCompletion: false)
+                audioBlobView.layer.performCurvePositionTransition(
+                    container: nil,
+                    fromPoint: CGPoint(x: fromFrame.midX, y: fromFrame.midY),
+                    toPoint: CGPoint(x: toFrame.midX, y: toFrame.midY),
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+                
+                audioBlobView.blobs.forEach { blob in
+                    blob.layer.animateScale(
+                        from: blob.layer.contentsScale,
+                        to: 0.45,
+                        duration: duration,
+                        timingFunction: positionXOptions.transitionCurve.timingFunction,
+                        mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction
+                    )
+                }
+                
+                audioNodeData.micButton.animateOut(false, withDuration: 0.18, delay: 0.15, removeOnCompletion: false)
+                
+                animationQueue.enter()
+                statusNodeWrapper.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration)
+                statusNodeWrapper.layer.performCurveTransition(
+                    container: transitionContainer.layer,
+                    fromRect: audioNodeData.micButtonFrame,
+                    toRect: toFrame,
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+            }
+            
+            animationQueue.commit()
+            
+            return
+        }
+        
+        guard case ChatTransitionContext.message(let inputPanelNodeData, let replyPanelNodeData) = chatTransitionContext else {
+            return completion(true)
+        }
+        
+        let animationSettings = AnimationSettingsProvider.shared.textMessageAnimationSettings
+        
+        let duration: TimeInterval = animationSettings.duration.duration
+        let positionXOptions = animationSettings.positionX
+        let positionYOptions = animationSettings.positionY
+        let colorChangeOptions = animationSettings.colorChange
+        let timeAppearsOptions = animationSettings.timeAppears
+        
+        transitionContainer.addSubnode(self)
+        
+        let animationQueue = AnimationQueue {
+            chatControllerNode.dismissTransitionContainer()
+            completion(true)
+        }
+        
+        let transitionContainer = chatControllerNode.presentTransitionContainer()
+        
+        let (backgroundColor, strokeColor, diameter, image) = currentTextInputBackgroundImage!
+        let fromPath = createFromPath(size: inputPanelNodeData.inputNodeFrame.size)
+        let toPath = createToPath(size: self.backgroundNode.imageNode.layer.bounds.size)
+        
+        let inputTransitionLayer = CAShapeLayer()
+        inputTransitionLayer.frame = self.backgroundNode.imageNode.frame
+        inputTransitionLayer.path = toPath.cgPath
+        inputTransitionLayer.fillColor = item.presentationData.theme.theme.chat.message.outgoing.bubble.withoutWallpaper.fill.cgColor
+//        inputTransitionLayer.strokeColor = item.presentationData.theme.theme.chat.message.outgoing.bubble.withoutWallpaper.stroke.cgColor
+        inputTransitionLayer.strokeColor = UIColor.clear.cgColor
+        inputTransitionLayer.opacity = 1.0
+        
+//        inputTransitionLayer.backgroundColor = UIColor.red.withAlphaComponent(0.5).cgColor
+//        self.backgroundNode.imageNode.backgroundColor = UIColor.green.withAlphaComponent(0.5)
+        
+        animationQueue.enter()
+        inputTransitionLayer.animate(
+            from: UIColor.white.cgColor,
+            to: item.presentationData.theme.theme.chat.message.outgoing.bubble.withoutWallpaper.fill.cgColor,
+            keyPath: "fillColor",
+            timingFunction: colorChangeOptions.transitionCurve.timingFunction,
+            duration: colorChangeOptions.relativeDuration,
+            delay: colorChangeOptions.relativeDelay,
+            mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { _ in
+                animationQueue.leave()
+            }
+        )
+        
+//        animationQueue.enter()
+//        inputTransitionLayer.animate(
+//            from: strokeColor.cgColor,
+//            to: item.presentationData.theme.theme.chat.message.outgoing.bubble.withoutWallpaper.stroke.cgColor,
+//            keyPath: "strokeColor",
+//            timingFunction: colorChangeOptions.transitionCurve.timingFunction,
+//            duration: colorChangeOptions.relativeDuration,
+//            delay: colorChangeOptions.relativeDelay,
+//            mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction,
+//            removeOnCompletion: false,
+//            completion: { _ in
+//                animationQueue.leave()
+//            }
+//        )
+        
+        animationQueue.enter()
+        inputTransitionLayer.animate(
+            from: fromPath.cgPath,
+            to: toPath.cgPath,
+            keyPath: "path",
+            timingFunction: colorChangeOptions.transitionCurve.timingFunction,
+            duration: duration,
+            delay: 0.0,
+            mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: true,
+            additive: false,
+            completion: { _ in
+                animationQueue.leave()
+            }
+        )
+        
+        animationQueue.enter()
+//        inputTransitionLayer.animateAlpha(from: 1.0, to: 0.0, duration: duration * 0.2, delay: duration * 0.8, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false)
+        inputTransitionLayer.performCurveTransition(
+            container: transitionContainer.layer,
+            fromRect: inputPanelNodeData.inputNodeFrame,
+            toRect: self.backgroundNode.layer.frame(in: transitionContainer.layer) |> {
+                CGRect(
+                    x: $0.origin.x - 1.0,
+                    y: $0.origin.y - 1.0,
+                    width: self.backgroundNode.imageNode.bounds.width,
+                    height: self.backgroundNode.imageNode.bounds.height
+                )
+            },
+            duration: duration,
+            positionXOptions: positionXOptions,
+            positionYOptions: positionYOptions,
+            removesOnCompletion: false,
+            completion: { _ in
+                
+//                self.backgroundNode.layer.addSublayer(inputTransitionLayer)
+//                inputTransitionLayer.animateAlpha(from: 1.0, to: 0.0, duration: duration * 0.2, delay: 0.0, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: { _ in
+//                    animationQueue.leave()
+//                })
+                
+//                animationQueue.enter()
+//                self.backgroundNode.imageNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2, delay: 0.0, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: { _ in
+//                    self.backgroundNode.imageNode.alpha = 1.0
+//                    animationQueue.leave()
+//                })
+//
+//                animationQueue.enter()
+//                self.backgroundNode.outlineImageNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2, delay: 0.0, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: { _ in
+//                    self.backgroundNode.outlineImageNode.alpha = 1.0
+//                    animationQueue.leave()
+//                })
+                
+                animationQueue.leave()
+            }
+        )
+        
+        animationQueue.enter()
+//        self.backgroundNode.outlineImageNode.alpha = 0.0
+        self.backgroundNode.outlineImageNode.layer.animateAlpha(from: 0.0, to: 0.0, duration: duration, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false)
+//        self.backgroundNode.outlineImageNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration * 0.2, delay: duration * 0.8, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false)
+        self.backgroundNode.outlineImageNode.layer.performCurveTransition(
+            container: transitionContainer.layer,
+            fromRect: inputPanelNodeData.inputNodeFrame,
+            toRect: self.backgroundNode.outlineImageNode.layer.convert(self.backgroundNode.outlineImageNode.layer.bounds, to: transitionContainer.layer),
+            duration: duration,
+            positionXOptions: positionXOptions,
+            positionYOptions: positionYOptions,
+            completion: { _ in
+                animationQueue.leave()
+            }
+        )
+        
+        animationQueue.enter()
+//        self.backgroundNode.imageNode.alpha = 0.0
+        self.backgroundNode.imageNode.layer.animateAlpha(from: 0.0, to: 0.0, duration: duration, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false)
+//        self.backgroundNode.imageNode.layer.animateAlpha(from: 0.0, to: 0.0, duration: duration * 0.2, delay: duration * 0.8, timingFunction: colorChangeOptions.transitionCurve.timingFunction, mediaTimingFunction: colorChangeOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false)
+        self.backgroundNode.imageNode.layer.performCurveTransition(
+            container: transitionContainer.layer,
+            fromRect: inputPanelNodeData.inputNodeFrame,
+            toRect: self.backgroundNode.imageNode.layer.convert(self.backgroundNode.imageNode.layer.bounds, to: transitionContainer.layer),
+            duration: duration,
+            positionXOptions: positionXOptions,
+            positionYOptions: positionYOptions,
+            completion: { _ in
+                animationQueue.leave()
+            }
+        )
+        
+        if let replyInfoNode = self.replyInfoNode, let replyPanelNodeData = replyPanelNodeData {
+            animationQueue.enter()
+            replyInfoNode.animateTransition(
+                transitionContainer: transitionContainer.layer,
+                replyPanelNodeData: replyPanelNodeData,
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        if let textContentNode = self.contentNodes.first as? ChatMessageTextBubbleContentNode {
+            
+            let textNodeMaskLayer = CAShapeLayer()
+            textNodeMaskLayer.backgroundColor = UIColor.black.cgColor
+            textContentNode.textNode.layer.mask = textNodeMaskLayer
+
+            textNodeMaskLayer.animateFrame(
+                from: CGRect(x: 0.0, y: inputPanelNodeData.textNodeContentOffset.y - 3.0, width: inputPanelNodeData.textNodeFrame.size.width, height: inputPanelNodeData.textNodeFrame.size.height),
+                to: CGRect(x: 0.0, y: 0.0, width: textContentNode.textNode.layer.bounds.size.width, height: textContentNode.textNode.layer.bounds.size.height),
+                duration: positionYOptions.relativeDuration,
+                delay: positionYOptions.relativeDelay,
+                timingFunction: positionYOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+                removeOnCompletion: false,
+                completion: { finished in
+                    textContentNode.textNode.layer.mask = nil
+                }
+            )
+            
+            animationQueue.enter()
+            textContentNode.textNode.layer.performCurveTransition(
+                container: transitionContainer.layer,
+                fromRect: (inputPanelNodeData.textNodeFrame, textContentNode.textNode.layer.bounds.size) |> { fromRect, toSize in
+                    CGRect(
+                        x: fromRect.minX,
+                        y: (fromRect.minY + 3) - inputPanelNodeData.textNodeContentOffset.y,
+                        width: toSize.width,
+                        height: toSize.height
+                    )
+                },
+                toRect: textContentNode.textNode.layer.convert(textContentNode.textNode.layer.bounds, to: transitionContainer.layer),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            textContentNode.statusNode.layer.animateAlpha(
+                from: 0.0, to: 1.0,
+                duration: timeAppearsOptions.relativeDuration,
+                delay: timeAppearsOptions.relativeDelay,
+                timingFunction: timeAppearsOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: timeAppearsOptions.transitionCurve.mediaTimingFunction,
+                removeOnCompletion: false,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            textContentNode.statusNode.layer.performCurveTransition(
+                container: transitionContainer.layer,
+                fromRect: (inputPanelNodeData.textNodeFrame, textContentNode.statusNode.layer.bounds.size) |> { fromRect, toSize in
+                    CGRect(
+                        x: fromRect.maxX - toSize.width,
+                        y: fromRect.maxY - toSize.height,
+                        width: toSize.width,
+                        height: toSize.height
+                    )
+                },
+                toRect: textContentNode.statusNode.layer.convert(textContentNode.statusNode.layer.bounds, to: transitionContainer.layer),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        if let webpageContentNode = self.contentNodes.last as? ChatMessageWebpageBubbleContentNode {
+            
+            let maskLayer = CAShapeLayer()
+            maskLayer.backgroundColor = UIColor.black.cgColor
+            webpageContentNode.layer.mask = maskLayer
+            
+            maskLayer.animateFrame(
+                from: CGRect(origin: .zero, size: CGSize(width: webpageContentNode.bounds.width, height: 0.0)),
+                to: CGRect(origin: .zero, size: CGSize(width: webpageContentNode.bounds.width, height: webpageContentNode.bounds.height)),
+                duration: duration,
+                timingFunction: positionYOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+                removeOnCompletion: false,
+                completion: { finished in
+                    webpageContentNode.layer.mask = nil
+                }
+            )
+
+            animationQueue.enter()
+            webpageContentNode.layer.performCurveTransition(
+                container: transitionContainer.layer,
+                fromRect: CGRect(
+                    x: inputPanelNodeData.inputNodeFrame.minX,
+                    y: inputPanelNodeData.inputNodeFrame.maxY,
+                    width: webpageContentNode.frame.width,
+                    height: 0.0
+                ),
+                toRect: webpageContentNode.layer.frame(in: transitionContainer.layer),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        animationQueue.commit()
+    }
+    
     override func animateInsertion(_ currentTimestamp: Double, duration: Double, short: Bool) {
         super.animateInsertion(currentTimestamp, duration: duration, short: short)
         
@@ -571,7 +1006,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
             }
         }
         
-        process(node: self)
+//        process(node: self)
     }
     
     override func animateRemoved(_ currentTimestamp: Double, duration: Double) {
@@ -1173,7 +1608,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode
         
         tmpWidth -= deliveryFailedInset
         
-        let maximumContentWidth = floor(tmpWidth - layoutConstants.bubble.edgeInset - layoutConstants.bubble.edgeInset - layoutConstants.bubble.contentInsets.left - layoutConstants.bubble.contentInsets.right - avatarInset)
+        let maximumContentWidth = min(floor(tmpWidth - layoutConstants.bubble.edgeInset - layoutConstants.bubble.edgeInset - layoutConstants.bubble.contentInsets.left - layoutConstants.bubble.contentInsets.right - avatarInset), 306.0)
         
         var contentPropertiesAndPrepareLayouts: [(Message, Bool, ChatMessageEntryAttributes, BubbleItemAttributes, (_ item: ChatMessageBubbleContentItem, _ layoutConstants: ChatMessageItemLayoutConstants, _ preparePosition: ChatMessageBubblePreparePosition, _ messageSelection: Bool?, _ constrainedSize: CGSize) -> (ChatMessageBubbleContentProperties, CGSize?, CGFloat, (CGSize, ChatMessageBubbleContentPosition) -> (CGFloat, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool) -> Void))))] = []
         var addedContentNodes: [(Message, Bool, ChatMessageBubbleContentNode)]?

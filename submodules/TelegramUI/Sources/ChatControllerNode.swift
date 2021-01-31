@@ -275,6 +275,23 @@ enum ChatEmbeddedTitlePeekContent: Equatable {
     case peek
 }
 
+struct TransitionContainerOptions: OptionSet {
+    
+    let rawValue: Int
+    
+    static let maskInputPanel = TransitionContainerOptions(rawValue: 1 << 0)
+    static let maskNavigationPanel = TransitionContainerOptions(rawValue: 1 << 1)
+}
+
+class TransitionContainerController: ViewController {
+    
+    override func loadView() {
+        super.loadView()
+        
+        self.view.backgroundColor = .clear
+    }
+}
+
 class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     let context: AccountContext
     let chatLocation: ChatLocation
@@ -297,7 +314,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
         }
     }
     
-    let backgroundNode: WallpaperBackgroundNode
+    let backgroundNode: ChatBackgroundNode
     let backgroundImageDisposable = MetaDisposable()
     let historyNode: ChatHistoryListNode
     var blurredHistoryNode: ASImageNode?
@@ -324,7 +341,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     private var inputPanelNode: ChatInputPanelNode?
     private weak var currentDismissedInputPanelNode: ASDisplayNode?
     private var secondaryInputPanelNode: ChatInputPanelNode?
-    private var accessoryPanelNode: AccessoryPanelNode?
+    var accessoryPanelNode: AccessoryPanelNode?
     private var inputContextPanelNode: ChatInputContextPanelNode?
     private let inputContextPanelContainer: ChatControllerTitlePanelNodeContainer
     private var overlayContextPanelNode: ChatInputContextPanelNode?
@@ -332,8 +349,10 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     private var inputNode: ChatInputNode?
     private var disappearingNode: ChatInputNode?
     
-    private var textInputPanelNode: ChatTextInputPanelNode?
-    private var inputMediaNode: ChatMediaInputNode?
+    var textInputPanelNode: ChatTextInputPanelNode?
+    var inputMediaNode: ChatMediaInputNode?
+    var chatTransitionContext: ChatTransitionContext?
+    var instantVideoMessageReady: (() -> Void)? = nil
     
     let navigateButtons: ChatHistoryNavigationButtons
     
@@ -439,6 +458,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     
     private var lastSendTimestamp = 0.0
     
+    private var chageBackgroundColorsDisposable: Disposable?
     private var openStickersDisposable: Disposable?
     private var displayVideoUnmuteTipDisposable: Disposable?
     
@@ -452,6 +472,37 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     }
     private var didProcessExperimentalEmbedUrl: String?
     
+    private var transitionContainerController: TransitionContainerController?
+    func presentTransitionContainer(options: TransitionContainerOptions = [.maskNavigationPanel]) -> UIView {
+        if let transitionContainerController = self.transitionContainerController {
+            return transitionContainerController.view
+        } else {
+            let transitionContainerController = TransitionContainerController(navigationBarPresentationData: nil)
+            self.transitionContainerController = transitionContainerController
+            self.controller?.presentInGlobalOverlay(transitionContainerController)
+            var maskFrame: CGRect = transitionContainerController.view.bounds
+            if options.contains(.maskNavigationPanel), let chatControllerTitlePanelNodeContainer = self.subnodes?.first(where: { $0 is ChatControllerTitlePanelNodeContainer })?.subnodes?.first {
+                let chatControllerTitlePanelNodeContainerFrame = chatControllerTitlePanelNodeContainer.layer.frame(in: transitionContainerController.view.layer)
+                maskFrame.origin.y = chatControllerTitlePanelNodeContainerFrame.maxY
+                maskFrame.size.height -= chatControllerTitlePanelNodeContainerFrame.maxY
+            }
+            if options.contains(.maskInputPanel), let chatTextInputPanelNode = self.subnodes?.first(where: { $0 is ChatTextInputPanelNode}) {
+                let chatTextInputPanelNodeFrame = chatTextInputPanelNode.layer.frame(in: transitionContainerController.view.layer)
+                maskFrame.size.height -= transitionContainerController.view.frame.height - chatTextInputPanelNodeFrame.minY
+            }
+            let maskLayer = CALayer()
+            maskLayer.backgroundColor = UIColor.white.cgColor
+            maskLayer.frame = maskFrame
+            transitionContainerController.view.layer.mask = maskLayer
+            return transitionContainerController.view
+        }
+    }
+    
+    func dismissTransitionContainer() {
+        self.transitionContainerController?.presentingViewController?.dismiss(animated: false, completion: nil)
+        self.transitionContainerController = nil
+    }
+    
     init(context: AccountContext, chatLocation: ChatLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, subject: ChatControllerSubject?, controllerInteraction: ChatControllerInteraction, chatPresentationInterfaceState: ChatPresentationInterfaceState, automaticMediaDownloadSettings: MediaAutoDownloadSettings, navigationBar: NavigationBar?, controller: ChatControllerImpl?) {
         self.context = context
         self.chatLocation = chatLocation
@@ -461,7 +512,13 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
         self.navigationBar = navigationBar
         self.controller = controller
         
-        self.backgroundNode = WallpaperBackgroundNode()
+        let gradientBackgroundNode = GradientBackgroundNode()
+        self.chageBackgroundColorsDisposable = AnimationSettingsProvider.shared.backgroundAnimationSettingsDidChange.get().start(next: { settings in
+            gradientBackgroundNode.colors = settings.colors
+            gradientBackgroundNode.animationDuration = settings.duration.duration
+            gradientBackgroundNode.animationOptions = settings.position
+        })
+        self.backgroundNode = gradientBackgroundNode
         self.backgroundNode.displaysAsynchronously = false
         
         self.titleAccessoryPanelContainer = ChatControllerTitlePanelNodeContainer()
@@ -547,7 +604,9 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
         
         self.backgroundImageDisposable.set(chatControllerBackgroundImageSignal(wallpaper: chatPresentationInterfaceState.chatWallpaper, mediaBox: context.sharedContext.accountManager.mediaBox, accountMediaBox: context.account.postbox.mediaBox).start(next: { [weak self] image in
             if let strongSelf = self, let (image, _) = image {
-                strongSelf.backgroundNode.image = image
+                if let imageBackgdoundNode = strongSelf.backgroundNode as? WallpaperBackgroundNode {
+                    imageBackgdoundNode.image = image
+                }
             }
         }))
         
@@ -1905,10 +1964,14 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
             if self.chatPresentationInterfaceState.chatWallpaper != chatPresentationInterfaceState.chatWallpaper {
                 self.backgroundImageDisposable.set(chatControllerBackgroundImageSignal(wallpaper: chatPresentationInterfaceState.chatWallpaper, mediaBox: self.context.sharedContext.accountManager.mediaBox, accountMediaBox: self.context.account.postbox.mediaBox).start(next: { [weak self] image in
                     if let strongSelf = self, let (image, final) = image {
-                        strongSelf.backgroundNode.image = image
+                        if let imageBackgdoundNode = strongSelf.backgroundNode as? WallpaperBackgroundNode {
+                            imageBackgdoundNode.image = image
+                        }
                     }
                 }))
-                self.backgroundNode.image = chatControllerBackgroundImage(theme: chatPresentationInterfaceState.theme, wallpaper: chatPresentationInterfaceState.chatWallpaper, mediaBox: context.sharedContext.accountManager.mediaBox, knockoutMode: self.context.sharedContext.immediateExperimentalUISettings.knockoutWallpaper)
+                if let imageBackgdoundNode = self.backgroundNode as? WallpaperBackgroundNode {
+                    imageBackgdoundNode.image = chatControllerBackgroundImage(theme: chatPresentationInterfaceState.theme, wallpaper: chatPresentationInterfaceState.chatWallpaper, mediaBox: context.sharedContext.accountManager.mediaBox, knockoutMode: self.context.sharedContext.immediateExperimentalUISettings.knockoutWallpaper)
+                }
                 if case .gradient = chatPresentationInterfaceState.chatWallpaper {
                     self.backgroundNode.imageContentMode = .scaleToFill
                 } else {
@@ -2182,6 +2245,10 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     
     func currentInputPanelFrame() -> CGRect? {
         return self.inputPanelNode?.frame
+    }
+    
+    func currentInputPanelBackgroundImage() -> UIImage? {
+        return (self.inputPanelNode as? ChatTextInputPanelNode)?.textInputBackgroundNode.image
     }
     
     func sendButtonFrame() -> CGRect? {
@@ -2676,6 +2743,33 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     }
     
     func sendCurrentMessage(silentPosting: Bool? = nil, scheduleTime: Int32? = nil, completion: @escaping () -> Void = {}) {
+        
+        if let textInputPanelNode = self.inputPanelNode as? ChatTextInputPanelNode, let textInputNode = textInputPanelNode.textInputNode {
+            
+            let inputPanelNodeTransitionData = InputPanelNodeTransitionData(
+                inputNodeFrame: textInputPanelNode.textInputContainer.layer.convert(textInputPanelNode.textInputContainer.layer.bounds, to: self.layer),
+                textNodeFrame: textInputNode.layer.convert(textInputNode.layer.bounds, to: self.layer),
+                textNodeContentOffset: textInputNode.textView.contentOffset
+            )
+            
+            if let replyPanelNode = self.accessoryPanelNode as? ReplyAccessoryPanelNode {
+                self.chatTransitionContext = .message(
+                    inputPanelNodeData: inputPanelNodeTransitionData,
+                    replyPanelNodeData: .init(
+                        lineNodeFrame: replyPanelNode.lineNode.layer.convert(replyPanelNode.lineNode.layer.bounds, to: self.layer),
+                        textNodeFrame: replyPanelNode.textNode.layer.convert(replyPanelNode.textNode.layer.bounds, to: self.layer),
+                        titleNodeFrame: replyPanelNode.titleNode.layer.convert(replyPanelNode.titleNode.layer.bounds, to: self.layer),
+                        replyPanelNode: replyPanelNode
+                    )
+                )
+            } else {
+                self.chatTransitionContext = .message(
+                    inputPanelNodeData: inputPanelNodeTransitionData,
+                    replyPanelNodeData: nil
+                )
+            }
+        }
+        
         if let textInputPanelNode = self.inputPanelNode as? ChatTextInputPanelNode {
             if textInputPanelNode.textInputNode?.isFirstResponder() ?? false {
                 Keyboard.applyAutocorrection()

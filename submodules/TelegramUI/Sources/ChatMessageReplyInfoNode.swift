@@ -18,11 +18,11 @@ enum ChatMessageReplyInfoType {
 }
 
 class ChatMessageReplyInfoNode: ASDisplayNode {
-    private let contentNode: ASDisplayNode
-    private let lineNode: ASImageNode
-    private var titleNode: TextNode?
-    private var textNode: TextNode?
-    private var imageNode: TransformImageNode?
+    public let contentNode: ASDisplayNode
+    public let lineNode: ASImageNode
+    public var titleNode: TextNode?
+    public var textNode: TextNode?
+    public var imageNode: TransformImageNode?
     private var previousMediaReference: AnyMediaReference?
     
     override init() {
@@ -51,7 +51,7 @@ class ChatMessageReplyInfoNode: ASDisplayNode {
         let previousMediaReference = maybeNode?.previousMediaReference
         
         return { presentationData, strings, context, type, message, constrainedSize in
-            let fontSize = floor(presentationData.fontSize.baseDisplaySize * 14.0 / 17.0)
+            let fontSize = floor(presentationData.fontSize.baseDisplaySize * 15.0 / 17.0)
             let titleFont = Font.medium(fontSize)
             let textFont = Font.regular(fontSize)
             
@@ -208,8 +208,12 @@ class ChatMessageReplyInfoNode: ASDisplayNode {
                     node.imageNode = nil
                 }
                 
+//                let titleNodeLineFrame = titleLayout.linesRects()[0]
                 titleNode.frame = CGRect(origin: CGPoint(x: leftInset - textInsets.left, y: spacing - textInsets.top), size: titleLayout.size)
+//                titleNode.frame = CGRect(origin: CGPoint(x: leftInset - textInsets.left, y: spacing - textInsets.top), size: titleNodeLineFrame.size)
+//                let textNodeLineFrame = textLayout.linesRects()[0]
                 textNode.frame = CGRect(origin: CGPoint(x: leftInset - textInsets.left, y: titleNode.frame.maxY - textInsets.bottom + spacing - textInsets.top), size: textLayout.size)
+//                textNode.frame = CGRect(origin: CGPoint(x: leftInset - textInsets.left, y: titleNode.frame.maxY - textInsets.bottom + spacing - textInsets.top), size: textNodeLineFrame.size)
                 
                 node.lineNode.image = lineImage
                 node.lineNode.frame = CGRect(origin: CGPoint(x: 1.0, y: 3.0), size: CGSize(width: 2.0, height: max(0.0, size.height - 5.0)))
@@ -219,5 +223,164 @@ class ChatMessageReplyInfoNode: ASDisplayNode {
                 return node
             })
         }
+    }
+    
+    func animateTransition(transitionContainer: CALayer, replyPanelNodeData: ReplyPanelNodeTransitionData, duration: TimeInterval, positionXOptions: CurveAnimationOptions, positionYOptions: CurveAnimationOptions, completion: ((Bool) -> Void)? = nil) {
+        
+        let animationQueue = AnimationQueue {
+            completion?(true)
+        }
+        
+        let replyPanelNode = replyPanelNodeData.replyPanelNode
+        
+        func crossDisolveTransition(snapshot: CALayer, with original: CALayer) {
+            
+            let snapshotAnimationDuration = duration * 0.4
+            let snapshotAnimationDelay = 0.0 //duration * 0.2
+            let snapshotAnimationTransitionCurve = ContainedViewLayoutTransitionCurve.linear
+            
+            snapshot.animateAlpha(from: 1.0, to: 0.0, duration: snapshotAnimationDuration, delay: snapshotAnimationDelay, timingFunction: snapshotAnimationTransitionCurve.timingFunction, mediaTimingFunction: snapshotAnimationTransitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: nil)
+            original.animateAlpha(from: 0.0, to: 1.0, duration: snapshotAnimationDuration, delay: snapshotAnimationDelay, timingFunction: snapshotAnimationTransitionCurve.timingFunction, mediaTimingFunction: snapshotAnimationTransitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: nil)
+        }
+        
+        if let lineNodeSnapshot = replyPanelNode.lineNode.view.snapshotContentTree() {
+            animationQueue.enter()
+            crossDisolveTransition(snapshot: lineNodeSnapshot.layer, with: self.lineNode.layer)
+            lineNodeSnapshot.layer.performCurvePositionTransition(
+                container: transitionContainer,
+                fromPoint: CGPoint(x: replyPanelNodeData.lineNodeFrame.midX, y: replyPanelNodeData.lineNodeFrame.midY),
+                toPoint: self.lineNode.layer.convert(self.lineNode.layer.bounds, to: transitionContainer) |> { CGRect(origin: $0.origin, size: lineNodeSnapshot.bounds.size) } |> { CGPoint(x: $0.midX, y: $0.midY) },
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        animationQueue.enter()
+        self.lineNode.layer.performCurvePositionTransition(
+            container: transitionContainer,
+            fromPoint: CGRect(origin: replyPanelNodeData.lineNodeFrame.origin, size: self.lineNode.layer.bounds.size) |> { CGPoint(x: $0.midX, y: $0.midY) },
+            toPoint: self.lineNode.layer.frame(in: transitionContainer) |> { CGPoint(x: $0.midX, y: $0.midY) },
+            duration: duration,
+            positionXOptions: positionXOptions,
+            positionYOptions: positionYOptions,
+            completion: { _ in
+                animationQueue.leave()
+            }
+        )
+        
+        if let titleNode = self.titleNode {
+            
+            let titleNodeFrame = replyPanelNodeData.titleNodeFrame
+            let heightDiff = titleNode.bounds.height - titleNodeFrame.height
+            let heightOffset = heightDiff * 0.5
+            
+            if let titleNodeSnapshot = replyPanelNodeData.replyPanelNode.titleNode.view.snapshotContentTree() {
+                animationQueue.enter()
+                crossDisolveTransition(snapshot: titleNodeSnapshot.layer, with: titleNode.layer)
+                titleNodeSnapshot.layer.performCurveTransition(
+                    container: transitionContainer,
+                    fromRect: titleNodeFrame,
+                    toRect: titleNode.layer.convert(titleNode.layer.bounds, to: transitionContainer) |> {
+                        CGRect(
+                            origin: CGPoint(
+                                x: $0.origin.x,
+                                y: $0.origin.y + heightOffset
+                            ),
+                            size: titleNodeFrame.size
+                        )
+                    },
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+            }
+            
+            animationQueue.enter()
+            titleNode.layer.performCurveTransition(
+                container: transitionContainer,
+                fromRect: CGRect(
+                    origin: CGPoint(
+                        x: titleNodeFrame.origin.x,
+                        y: titleNodeFrame.origin.y - heightOffset
+                    ),
+                    size: titleNode.layer.bounds.size
+                ),
+                toRect: titleNode.layer.frame(in: transitionContainer),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        if let textNode = self.textNode {
+            
+            let textNodeFrame = replyPanelNodeData.textNodeFrame
+            let heightDiff = textNode.bounds.height - textNodeFrame.height
+            let heightOffset = heightDiff * 0.5
+            
+            if let textNodeSnapshot = replyPanelNodeData.replyPanelNode.textNode.view.snapshotContentTree() {
+                animationQueue.enter()
+                crossDisolveTransition(snapshot: textNodeSnapshot.layer, with: textNode.layer)
+                textNodeSnapshot.layer.performCurveTransition(
+                    container: transitionContainer,
+                    fromRect: textNodeFrame,
+                    toRect: textNode.layer.convert(textNode.layer.bounds, to: transitionContainer) |> {
+                        CGRect(
+                            origin: CGPoint(
+                                x: $0.origin.x,
+                                y: $0.origin.y + heightOffset
+                            ),
+                            size: textNodeFrame.size
+                        )
+                    },
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+            }
+            
+            textNode.layer.performCurveTransition(
+                container: transitionContainer,
+                fromRect: CGRect(
+                    origin: CGPoint(
+                        x: replyPanelNodeData.textNodeFrame.origin.x,
+                        y: replyPanelNodeData.textNodeFrame.origin.y - heightOffset
+                    ),
+                    size: textNode.layer.bounds.size
+                ),
+                toRect: textNode.layer.frame(in: transitionContainer),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+        }
+        
+        replyPanelNodeData.replyPanelNode.closeButton.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration)
+        replyPanelNodeData.replyPanelNode.subnodes?.forEach {
+            $0.alpha = 0.0
+        }
+    }
+}
+
+extension CALayer {
+    
+    func frame(in layer: CALayer) -> CGRect {
+        return self.convert(self.bounds, to: layer)
     }
 }

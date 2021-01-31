@@ -33,9 +33,12 @@
 - (void)buttonInteractionUpdate:(CGPoint)value;
 - (void)setLocked;
 
+- (UIView *)getPreviewView;
 - (CGRect)frameForSendButton;
 
+- (void)complete:(bool)dismiss;
 - (void)complete;
+- (void)dismiss:(bool)cancelled;
 - (void)dismiss;
 - (bool)stop;
 

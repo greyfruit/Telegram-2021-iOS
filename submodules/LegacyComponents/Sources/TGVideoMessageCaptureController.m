@@ -146,6 +146,10 @@ typedef enum
 
 @implementation TGVideoMessageCaptureController
 
+- (UIView *)getPreviewView {
+    return _previewView;
+}
+
 - (instancetype)initWithContext:(id<LegacyComponentsContext>)context assets:(TGVideoMessageCaptureControllerAssets *)assets transitionInView:(UIView *(^)(void))transitionInView parentController:(TGViewController *)parentController controlsFrame:(CGRect)controlsFrame isAlreadyLocked:(bool (^)(void))isAlreadyLocked liveUploadInterface:(id<TGLiveUploadInterface>)liveUploadInterface pallete:(TGModernConversationInputMicPallete *)pallete slowmodeTimestamp:(int32_t)slowmodeTimestamp slowmodeView:(UIView *(^)(void))slowmodeView canSendSilently:(bool)canSendSilently canSchedule:(bool)canSchedule reminder:(bool)reminder
 {
     self = [super initWithContext:context];
@@ -652,7 +656,11 @@ typedef enum
     });
 }
 
-- (void)complete
+- (void)complete {
+    [self complete:true];
+}
+
+- (void)complete:(bool)dismiss
 {
     if (_stopped)
         return;
@@ -660,7 +668,8 @@ typedef enum
     [_activityDisposable dispose];
     [self stopRecording:^{
         TGDispatchOnMainThread(^{
-            [self dismiss:false];
+            if (dismiss)
+                [self dismiss:false];
         });
     }];
 }

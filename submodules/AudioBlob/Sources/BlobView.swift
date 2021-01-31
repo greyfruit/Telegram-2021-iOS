@@ -8,6 +8,10 @@ public final class VoiceBlobView: UIView, TGModernConversationInputMicButtonDeco
     private let mediumBlob: BlobView
     private let bigBlob: BlobView
     
+    public var blobs: [UIView] {
+        return [self.bigBlob, self.mediumBlob, self.smallBlob]
+    }
+    
     private let maxLevel: CGFloat
     
     private var displayLinkAnimator: ConstantDisplayLinkAnimator?

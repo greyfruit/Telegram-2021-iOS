@@ -153,6 +153,146 @@ class ChatMessageInstantVideoItemNode: ChatMessageItemView {
         self.view.addGestureRecognizer(replyRecognizer)
     }
     
+    override func requireTransitionContainer() -> Bool {
+        return true
+    }
+    
+    override func animateInsertion(in transitionContainer: ASDisplayNode, completion: @escaping (Bool) -> Void) {
+        
+        guard let item = self.item, let chatControllerNode = item.controllerInteraction.chatControllerNode() as? ChatControllerNode, let chatTransitionContext = chatControllerNode.chatTransitionContext else {
+            return completion(true)
+        }
+        
+        defer {
+            chatControllerNode.chatTransitionContext = nil
+        }
+        
+        guard case ChatTransitionContext.video(_, let snapshotView) = chatTransitionContext else {
+            return completion(true)
+        }
+        
+        transitionContainer.addSubnode(self)
+
+        let transitionContainer = chatControllerNode.presentTransitionContainer()
+        
+//        self.interactiveVideoNode.backgroundColor = UIColor.red.withAlphaComponent(0.5)
+//        snapshotView.backgroundColor = UIColor.green.withAlphaComponent(0.5)
+        
+        self.interactiveVideoNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.13)
+        snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.8, delay: 0.13, removeOnCompletion: false)
+        
+        let interactiveVideoNodeOriginalSuperLayer = self.interactiveVideoNode.layer.superlayer
+        self.interactiveVideoNode.layer.removeFromSuperlayer()
+        transitionContainer.layer.addSublayer(self.interactiveVideoNode.layer)
+        
+        let animationQueue = AnimationQueue {
+            snapshotView.removeFromSuperview()
+            interactiveVideoNodeOriginalSuperLayer?.addSublayer(self.interactiveVideoNode.layer)
+            self.interactiveVideoNode.layer.removeAllAnimations()
+            chatControllerNode.dismissTransitionContainer()
+            completion(true)
+        }
+        
+        if let timeAppearsAnimation = snapshotView.viewWithTag(1)?.layer.animation(forKey: "opacity") as? CABasicAnimation {
+            animationQueue.enter()
+            timeAppearsAnimation.completion = { finished in
+                animationQueue.leave()
+            }
+            self.interactiveVideoNode.durationNode?.layer.add(timeAppearsAnimation, forKey: "opacity")
+            self.interactiveVideoNode.dateAndStatusNode.layer.add(timeAppearsAnimation, forKey: "opacity")
+        }
+        
+        if let positionXAnimation = snapshotView.layer.animation(forKey: "position.x") as? CABasicAnimation {
+            animationQueue.enter()
+            positionXAnimation.completion = { finished in
+                animationQueue.leave()
+            }
+            self.interactiveVideoNode.layer.add(positionXAnimation, forKey: "position.x")
+        }
+        
+        if let positionYAnimation = snapshotView.layer.animation(forKey: "position.y") as? CABasicAnimation {
+            animationQueue.enter()
+            positionYAnimation.completion = { finished in
+                animationQueue.leave()
+            }
+            self.interactiveVideoNode.layer.add(positionYAnimation, forKey: "position.y")
+        }
+        
+        animationQueue.commit()
+        
+//        let animationSettings = AnimationSettingsProvider.shared.videoMessageAnimationSettings
+//        let duration: TimeInterval = animationSettings.duration.duration
+//        let positionYOptions = animationSettings.positionY
+//        let positionXOptions = animationSettings.positionX
+//        let timeAppearsOptions = animationSettings.timeAppears
+        
+//        let fromRect = snapshotPresentationLayer.frame(in: transitionContainer.layer)
+//        let toRect = self.interactiveVideoNode.layer.frame(in: transitionContainer.layer)
+//
+//        var animationCompleted: Double {
+//            let currentTime = CACurrentMediaTime()
+//            let beginTime = snapshotAnimation.beginTime
+//            return currentTime - beginTime
+//        }
+//
+//        if let durationNode = self.interactiveVideoNode.durationNode {
+//            animationQueue.enter()
+//            durationNode.layer.animateAlpha(
+//                from: 0.0, to: 1.0,
+//                duration: duration * timeAppearsOptions.relativeDuration,
+//                delay: (duration * timeAppearsOptions.relativeDelay) - animationCompleted,
+//                timingFunction: timeAppearsOptions.transitionCurve.timingFunction,
+//                mediaTimingFunction: timeAppearsOptions.transitionCurve.mediaTimingFunction,
+//                removeOnCompletion: false,
+//                completion: { finished in
+//                    animationQueue.leave()
+//                }
+//            )
+//        }
+//
+//        let dateAndStatusNode = self.interactiveVideoNode.dateAndStatusNode
+//        animationQueue.enter()
+//        dateAndStatusNode.layer.animateAlpha(
+//            from: 0.0, to: 1.0,
+//            duration: duration * timeAppearsOptions.relativeDuration,
+//            delay: (duration * timeAppearsOptions.relativeDelay) - animationCompleted,
+//            timingFunction: timeAppearsOptions.transitionCurve.timingFunction,
+//            mediaTimingFunction: timeAppearsOptions.transitionCurve.mediaTimingFunction,
+//            removeOnCompletion: false,
+//            completion: { finished in
+//                animationQueue.leave()
+//            }
+//        )
+//
+//        animationQueue.enter()
+//        self.interactiveVideoNode.layer.animatePositionX(
+//            from: fromRect.midX,
+//            to: toRect.midX,
+//            duration: positionXOptions.relativeDuration * duration,
+//            delay: (positionXOptions.relativeDelay * duration) - animationCompleted,
+//            timingFunction: positionXOptions.transitionCurve.timingFunction,
+//            mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction,
+//            removeOnCompletion: false,
+//            completion: { finished in
+//                animationQueue.leave()
+//            }
+//        )
+//
+//        animationQueue.enter()
+//        self.interactiveVideoNode.layer.animatePositionY(
+//            from: fromRect.midY,
+//            to: toRect.midY,
+//            duration: positionYOptions.relativeDuration * duration,
+//            delay: (positionYOptions.relativeDelay * duration) - animationCompleted,
+//            timingFunction: positionYOptions.transitionCurve.timingFunction,
+//            mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+//            removeOnCompletion: false,
+//            completion: { finished in
+//                animationQueue.leave()
+//            }
+//        )
+    }
+    
     override func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: Bool) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, Bool) -> Void) {
         let layoutConstants = self.layoutConstants
         

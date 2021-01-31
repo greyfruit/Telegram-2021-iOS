@@ -222,19 +222,24 @@ final class ChatTextInputMediaRecordingButton: TGModernConversationInputMicButto
         }
     }
     
+    var hasSuccessRecording: Bool = false
     private var hasRecorder: Bool = false {
         didSet {
             if self.hasRecorder != oldValue {
                 if self.hasRecorder {
                     self.animateIn()
                 } else {
-                    self.animateOut(false)
+                    if self.hasSuccessRecording {
+                        self.hasSuccessRecording = false // Perform custom transitioning
+                    } else {
+                        self.animateOut(false)
+                    }
                 }
             }
         }
     }
     
-    private lazy var micDecoration: (UIView & TGModernConversationInputMicButtonDecoration) = {
+    lazy var micDecoration: (UIView & TGModernConversationInputMicButtonDecoration) = {
         let blobView = VoiceBlobView(
             frame: CGRect(origin: CGPoint(), size: CGSize(width: 220.0, height: 220.0)),
             maxLevel: 4,
@@ -434,15 +439,23 @@ final class ChatTextInputMediaRecordingButton: TGModernConversationInputMicButto
         innerIconView.layer.animateScale(from: 1.0, to: 0.3, duration: 0.15, removeOnCompletion: false)
     }
 
-    override func animateOut(_ toSmallSize: Bool) {
-        super.animateOut(toSmallSize)
+    override func animateOut(_ toSmallSize: Bool, withDuration duration: Double, delay: Double, removeOnCompletion: Bool) {
+        super.animateOut(toSmallSize, withDuration: duration, delay: delay, removeOnCompletion: removeOnCompletion)
         
-        micDecoration.stopAnimating()
+        if removeOnCompletion {
+            micDecoration.stopAnimating()
+        }
         
         if toSmallSize {
-            micDecoration.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.03, delay: 0.15, removeOnCompletion: false)
+//            micDecoration.layer.animateScale(from: micDecoration.layer.contentsScale, to: 0.33, duration: 0.18)
+            if !micDecoration.layer.hasAnimations {
+                micDecoration.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.03, delay: 0.15, removeOnCompletion: false)
+            }
         } else {
-            micDecoration.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.18, removeOnCompletion: false)
+//            micDecoration.layer.animateScale(from: micDecoration.layer.contentsScale, to: 0.2, duration: 0.18)
+            if !micDecoration.layer.hasAnimations {
+                micDecoration.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.18, removeOnCompletion: false)
+            }
             innerIconView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15, removeOnCompletion: false)
             innerIconView.layer.animateScale(from: 0.3, to: 1.0, duration: 0.15, removeOnCompletion: false)
         }
@@ -456,5 +469,11 @@ final class ChatTextInputMediaRecordingButton: TGModernConversationInputMicButto
             let iconSize = self.innerIconView.bounds.size
             self.innerIconView.frame = CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: floor((size.height - iconSize.height) / 2.0)), size: iconSize)
         }
+    }
+}
+
+extension CALayer {
+    var hasAnimations: Bool {
+        return !(self.animationKeys().map(\.isEmpty) ?? false)
     }
 }

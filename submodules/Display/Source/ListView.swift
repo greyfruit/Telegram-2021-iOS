@@ -2103,6 +2103,9 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
         
         node.contentSize = layout.contentSize
         node.insets = layout.insets
+        if self.reservedOffsetHeight > 0 {
+            self.reservedOffsetHeight -= layout.size.height
+        }
         node.apparentHeight = animated ? 0.0 : layout.size.height
         node.updateFrame(nodeFrame, within: self.visibleSize)
         if let accessoryItemNode = node.accessoryItemNode {
@@ -2254,6 +2257,25 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
         }
     }
     
+    var reservedOffsetHeight: CGFloat = 0.0
+    public func reserveInsertNodeHeight(_ offsetHeight: CGFloat) {
+        self.reservedOffsetHeight += offsetHeight
+        
+        var i = 0
+        while i < self.itemNodes.count {
+            let node = self.itemNodes[i]
+            let originalFrame = node.frame
+            var frame = node.frame
+            frame.origin.y += offsetHeight
+            node.updateFrame(frame, within: self.visibleSize)
+            node.layer.animateFrame(from: originalFrame, to: frame, duration: 0.3, timingFunction: ContainedViewLayoutTransitionCurve.easeInOut.timingFunction)
+            if let accessoryItemNode = self.itemNodes[i].accessoryItemNode {
+                self.itemNodes[i].layoutAccessoryItemNode(accessoryItemNode, leftInset: self.insets.left, rightInset: self.insets.right)
+            }
+            i += 1
+        }
+    }
+    
     private func lowestNodeToInsertBelow() -> ASDisplayNode? {
         if let itemNode = self.reorderNode?.itemNode, itemNode.supernode == self {
             //return itemNode
@@ -2402,32 +2424,9 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                     
                     self.insertNodeAtIndex(animated: nodeAnimated, animateAlpha: animateAlpha, forceAnimateInsertion: forceAnimateInsertion, previousFrame: updatedPreviousFrame, nodeIndex: index, offsetDirection: offsetDirection, node: node, layout: layout, apply: apply, timestamp: timestamp, listInsets: listInsets, visibleBounds: visibleBounds)
                     hadInserts = true
-                    if let _ = updatedPreviousFrame {
-                        if let itemNode = self.reorderNode?.itemNode, itemNode.supernode == self {
-                            self.insertSubnode(node, belowSubnode: itemNode)
-                        } else if let lowestNodeToInsertBelow = lowestNodeToInsertBelow {
-                            self.insertSubnode(node, belowSubnode: lowestNodeToInsertBelow)
-                        } else if let verticalScrollIndicator = self.verticalScrollIndicator {
-                            self.insertSubnode(node, belowSubnode: verticalScrollIndicator)
-                        } else {
-                            self.addSubnode(node)
-                        }
-                        if let extractedBackgroundsNode = node.extractedBackgroundNode {
-                            self.extractedBackgroundsContainerNode?.addSubnode(extractedBackgroundsNode)
-                        }
-                    } else {
-                        if animated {
-                            if let topItemOverscrollBackground = self.topItemOverscrollBackground {
-                                self.insertSubnode(node, aboveSubnode: topItemOverscrollBackground)
-                            } else if let extractedBackgroundsContainerNode = self.extractedBackgroundsContainerNode {
-                                self.insertSubnode(node, aboveSubnode: extractedBackgroundsContainerNode)
-                            } else {
-                                self.insertSubnode(node, at: 0)
-                            }
-                            if let extractedBackgroundsNode = node.extractedBackgroundNode {
-                                self.extractedBackgroundsContainerNode?.addSubnode(extractedBackgroundsNode)
-                            }
-                        } else {
+                    
+                    func insertSubnode() {
+                        if let _ = updatedPreviousFrame {
                             if let itemNode = self.reorderNode?.itemNode, itemNode.supernode == self {
                                 self.insertSubnode(node, belowSubnode: itemNode)
                             } else if let lowestNodeToInsertBelow = lowestNodeToInsertBelow {
@@ -2440,8 +2439,47 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                             if let extractedBackgroundsNode = node.extractedBackgroundNode {
                                 self.extractedBackgroundsContainerNode?.addSubnode(extractedBackgroundsNode)
                             }
+                        } else {
+                            if animated {
+                                if let topItemOverscrollBackground = self.topItemOverscrollBackground {
+                                    self.insertSubnode(node, aboveSubnode: topItemOverscrollBackground)
+                                } else if let extractedBackgroundsContainerNode = self.extractedBackgroundsContainerNode {
+                                    self.insertSubnode(node, aboveSubnode: extractedBackgroundsContainerNode)
+                                } else {
+                                    self.insertSubnode(node, at: 0)
+                                }
+                                if let extractedBackgroundsNode = node.extractedBackgroundNode {
+                                    self.extractedBackgroundsContainerNode?.addSubnode(extractedBackgroundsNode)
+                                }
+                            } else {
+                                if let itemNode = self.reorderNode?.itemNode, itemNode.supernode == self {
+                                    self.insertSubnode(node, belowSubnode: itemNode)
+                                } else if let lowestNodeToInsertBelow = lowestNodeToInsertBelow {
+                                    self.insertSubnode(node, belowSubnode: lowestNodeToInsertBelow)
+                                } else if let verticalScrollIndicator = self.verticalScrollIndicator {
+                                    self.insertSubnode(node, belowSubnode: verticalScrollIndicator)
+                                } else {
+                                    self.addSubnode(node)
+                                }
+                                if let extractedBackgroundsNode = node.extractedBackgroundNode {
+                                    self.extractedBackgroundsContainerNode?.addSubnode(extractedBackgroundsNode)
+                                }
+                            }
                         }
                     }
+                    
+                    if forceAnimateInsertion && node.requireTransitionContainer() {
+                        DispatchQueue.main.async { //After(deadline: .now() + .milliseconds(100)) {
+                            node.animateInsertion(in: self) { finished in
+//                                if finished {
+                                    insertSubnode()
+//                                }
+                            }
+                        }
+                    } else {
+                        insertSubnode()
+                    }
+                    
                 case let .InsertDisappearingPlaceholder(index, referenceNodeObject, offsetDirection):
                     var height: CGFloat?
                     var previousLayout: ListViewItemNodeLayout?

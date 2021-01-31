@@ -1604,10 +1604,403 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
         }
     }
     
+    override func requireTransitionContainer() -> Bool {
+        return true
+    }
+    
+    override func animateInsertion(in transitionContainer: ASDisplayNode, completion: @escaping (Bool) -> Void) {
+        
+        func animateDateAndStatusNode(transitionContainer: CALayer, duration: TimeInterval, animationOptions: CurveAnimationOptions, completion: ((Bool) -> Void)?) {
+            
+            let animationQueue = AnimationQueue {
+                completion?(true)
+            }
+            
+            animationQueue.enter()
+            self.dateAndStatusNode.layer.animateAlpha(
+                from: 0.0, to: 1.0,
+                duration: duration * animationOptions.relativeDuration,
+                delay: duration * animationOptions.relativeDelay,
+                timingFunction: animationOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: animationOptions.transitionCurve.mediaTimingFunction,
+                removeOnCompletion: false,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            self.dateAndStatusNode.layer.performTransition(
+                container: transitionContainer,
+                fromRect: self.dateAndStatusNode.layer.frame(in: transitionContainer).offsetBy(dx: 0.0, dy: 40.0),
+                toRect: self.dateAndStatusNode.layer.frame(in: transitionContainer),
+                duration: duration,
+                transitionCurve: animationOptions.transitionCurve,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.commit()
+        }
+        
+        func animateReplyInfoNode(transitionContainer: CALayer, replyPanelNodeData: ReplyPanelNodeTransitionData?, duration: TimeInterval, positionXOptions: CurveAnimationOptions, positionYOptions: CurveAnimationOptions, completion: (() -> Void)?) {
+            
+            let animationQueue = AnimationQueue {
+                completion?()
+            }
+            
+            if let replyInfoNode = self.replyInfoNode, let replyPanelNodeData = replyPanelNodeData {
+                
+                if let replyBackgroundNode = self.replyBackgroundNode {
+                    animationQueue.enter()
+                    replyBackgroundNode.layer.zPosition = -1.0
+                    replyBackgroundNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration, delay: 0.0, timingFunction: positionYOptions.transitionCurve.timingFunction, mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction, removeOnCompletion: false, completion: nil)
+                    replyBackgroundNode.layer.performCurvePositionTransition(
+                        container: transitionContainer,
+                        fromPoint: CGPoint(x: replyPanelNodeData.lineNodeFrame.minX + (replyBackgroundNode.layer.bounds.width/2), y: replyPanelNodeData.lineNodeFrame.midY),
+                        toPoint: replyBackgroundNode.layer.frame(in: transitionContainer) |> { CGPoint(x: $0.midX, y: $0.midY) },
+                        duration: duration,
+                        positionXOptions: positionXOptions,
+                        positionYOptions: positionYOptions,
+                        completion: { _ in
+                            animationQueue.leave()
+                        }
+                    )
+                }
+                
+                animationQueue.enter()
+                replyInfoNode.animateTransition(
+                    transitionContainer: transitionContainer,
+                    replyPanelNodeData: replyPanelNodeData,
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+            }
+            
+            animationQueue.commit()
+        }
+        
+        guard let item = self.item, let chatControllerNode = item.controllerInteraction.chatControllerNode() as? ChatControllerNode, let transitionContext = chatControllerNode.chatTransitionContext else {
+            return completion(true)
+        }
+        
+        switch transitionContext {
+        case .message(let inputPanelNodeData, let replyPanelNodeData):
+            
+            defer {
+                chatControllerNode.chatTransitionContext = nil
+            }
+            
+            transitionContainer.addSubnode(self)
+            
+            let transitionContainer = chatControllerNode.presentTransitionContainer()
+            
+            let animationSettings = AnimationSettingsProvider.shared.singleEmojiAnimationSettings
+            let duration = animationSettings.duration.duration
+            let boundsOptions = animationSettings.emojiScale
+            let positionXOptions = animationSettings.positionX
+            let positionYOptions = animationSettings.positionY
+            
+            let animationQueue = AnimationQueue {
+                
+                self.dateAndStatusNode.layer.removeAllAnimations()
+                chatControllerNode.dismissTransitionContainer()
+
+                completion(true)
+            }
+            
+            if let animationNode = self.animationNode as? AnimatedStickerNode, let rendererNode = animationNode.rendererNode {
+                
+                var fontSize: CGFloat = 20.0
+                let targetSize = animationNode.bounds.size
+                var currentSize: CGSize = .zero
+                while true {
+                    currentSize = item.message.text.boundingRect(with: targetSize, options: [.usesFontLeading, .usesLineFragmentOrigin], attributes: [.font : UIFont.systemFont(ofSize: fontSize)], context: nil).size
+                    if currentSize.height > targetSize.height {
+                        break
+                    } else {
+                        fontSize += 1.0
+                    }
+                }
+                
+                let contentInsets = UIEdgeInsets(top: 2.0, left: 1.0, bottom: 5.0, right: 0.0)
+                let contentHeight = inputPanelNodeData.textNodeFrame.height - contentInsets.top - contentInsets.bottom
+                let contentWidth = (currentSize.width * contentHeight) / currentSize.height
+                
+                let toRect = animationNode.layer.frame(in: transitionContainer.layer)
+                let fromRect = CGRect(
+                    x: inputPanelNodeData.textNodeFrame.origin.x + 2.0,
+                    y: inputPanelNodeData.textNodeFrame.origin.y + contentInsets.top,
+                    width: contentWidth,
+                    height: contentHeight
+                )
+                
+                let textLayer = CATextLayer()
+                textLayer.contentsScale = UIScreen.main.scale
+                textLayer.fontSize = fontSize
+                textLayer.string = item.message.text
+                textLayer.frame = CGRect(origin: .zero, size: currentSize)
+                
+                animationQueue.enter()
+                textLayer.animateScale(
+                    from: fromRect.height / currentSize.height,
+                    to: 1.0,
+                    duration: boundsOptions.relativeDuration * duration,
+                    delay: boundsOptions.relativeDelay * duration,
+                    timingFunction: boundsOptions.transitionCurve.timingFunction,
+                    mediaTimingFunction: boundsOptions.transitionCurve.mediaTimingFunction,
+                    removeOnCompletion: false,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+                
+                animationQueue.enter()
+                textLayer.animateAlpha(from: 1.0, to: 0.0, duration: duration * 0.3, delay: duration * 0.1, timingFunction: ContainedViewLayoutTransitionCurve.linear.timingFunction, mediaTimingFunction: ContainedViewLayoutTransitionCurve.linear.mediaTimingFunction, removeOnCompletion: false, completion: nil)
+                textLayer.performCurvePositionTransition(
+                    container: transitionContainer.layer,
+                    fromPoint: fromRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                    toPoint: toRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                    duration: duration,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+                
+                
+//                animationQueue.enter()
+//                animationNode.layer.animateScale(
+//                    from: fromRect.height / toRect.height,
+//                    to: 1.0,
+//                    duration: duration * boundsOptions.relativeDuration,
+//                    delay: duration * boundsOptions.relativeDuration,
+//                    timingFunction: boundsOptions.transitionCurve.timingFunction,
+//                    mediaTimingFunction: boundsOptions.transitionCurve.mediaTimingFunction,
+//                    removeOnCompletion: false,
+//                    completion: { _ in
+//                        animationQueue.leave()
+//                    }
+//                )
+//
+//                animationQueue.enter()
+//                animationNode.layer.performCurvePositionTransition(
+//                    container: transitionContainer.layer,
+//                    fromPoint: fromRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+//                    toPoint: toRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+//                    duration: duration,
+//                    positionXOptions: positionXOptions,
+//                    positionYOptions: positionYOptions,
+//                    completion: { _ in
+//                        animationQueue.leave()
+//                    }
+//                )
+                
+                animationQueue.enter()
+                self.imageNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration * 0.1, removeOnCompletion: true)
+                self.imageNode.layer.performCurveTransitionWithBounds(
+                    container: transitionContainer.layer,
+                    fromRect: fromRect,
+                    toRect: toRect,
+                    duration: duration,
+                    boundsOptions: boundsOptions,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+                
+                animationQueue.enter()
+                rendererNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration * 0.1, timingFunction: ContainedViewLayoutTransitionCurve.linear.timingFunction, mediaTimingFunction: ContainedViewLayoutTransitionCurve.linear.mediaTimingFunction, removeOnCompletion: false, completion: nil)
+                rendererNode.layer.performCurveTransitionWithBounds(
+                    container: transitionContainer.layer,
+                    fromRect: fromRect,
+                    toRect: toRect,
+                    duration: duration,
+                    boundsOptions: boundsOptions,
+                    positionXOptions: positionXOptions,
+                    positionYOptions: positionYOptions,
+                    completion: { _ in
+                        animationQueue.leave()
+                    }
+                )
+            }
+            
+            animationQueue.enter()
+            animateDateAndStatusNode(
+                transitionContainer: transitionContainer.layer,
+                duration: duration,
+                animationOptions: animationSettings.timeAppears,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            animateReplyInfoNode(
+                transitionContainer: transitionContainer.layer,
+                replyPanelNodeData: replyPanelNodeData,
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: {
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.commit()
+            
+        case .sticker(let sourceNode, let replyPanelNodeData):
+            
+            defer {
+                chatControllerNode.chatTransitionContext = nil
+            }
+            
+            transitionContainer.addSubnode(self)
+            
+            let transitionContainer = chatControllerNode.presentTransitionContainer()
+            
+            let animationSettings = AnimationSettingsProvider.shared.stickerAnimationSettings
+            let duration: TimeInterval = animationSettings.duration.duration
+            let scaleOptions = animationSettings.stickerScale
+            let positionXOptions = animationSettings.positionX
+            let positionYOptions = animationSettings.positionY
+            let timeAppearsOptions = animationSettings.timeAppears
+            
+            let animationQueue = AnimationQueue {
+                
+                self.dateAndStatusNode.layer.removeAllAnimations()
+                chatControllerNode.dismissTransitionContainer()
+                
+                completion(true)
+            }
+            
+            let animationNode = self.animationNode as! AnimatedStickerNode
+            let animationNodeRendererNode = animationNode.rendererNode!
+            let sentStickerSourceNode = sourceNode as! ChatMediaInputStickerGridItemNode
+            let sentStickerRendererNode = sentStickerSourceNode.animationNode!.rendererNode as! AnimationRenderer
+            
+            let startedClosure = animationNode.started
+            animationNode.started = {
+                let _ = (sentStickerSourceNode.animationNode!.status
+                    |> map { $0.timestamp }
+                    |> take(1)
+                    |> runOn(Queue.mainQueue())
+                    |> deliverOnMainQueue).start(next: { timestamp in
+                        animationNode.seekTo(.timestamp(timestamp), completion: {
+                            startedClosure()
+                            animationNode.play()
+                            sentStickerRendererNode.setDidUpdateImage(nil)
+                        })
+                    })
+            }
+            animationNode.setupRenderer()
+            animationNode.play()
+            
+            sentStickerRendererNode.setDidUpdateImage { image in
+                self.imageNode.alpha = 0.0
+                animationNodeRendererNode.contents = image
+            }
+            
+            sentStickerSourceNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.5)
+            sentStickerSourceNode.layer.animateScale(from: 0.8, to: 1.0, duration: 0.5)
+            
+            let fromRect = sentStickerSourceNode.animationNode!.layer.frame(in: transitionContainer.layer)
+            let toRect = animationNode.layer.frame(in: transitionContainer.layer)
+            
+            animationQueue.enter()
+            self.imageNode.layer.animateScale(
+                from: fromRect.height/toRect.height,
+                to: 1.0,
+                duration: scaleOptions.relativeDuration * duration,
+                delay: scaleOptions.relativeDelay * duration,
+                timingFunction: scaleOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: scaleOptions.transitionCurve.mediaTimingFunction,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            self.imageNode.layer.performCurvePositionTransition(
+                container: transitionContainer.layer,
+                fromPoint: fromRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                toPoint: toRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            animationNodeRendererNode.layer.removeAllAnimations()
+            animationNodeRendererNode.layer.animateScale(
+                from: fromRect.height/toRect.height,
+                to: 1.0,
+                duration: scaleOptions.relativeDuration * duration,
+                delay: scaleOptions.relativeDelay * duration,
+                timingFunction: scaleOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: scaleOptions.transitionCurve.mediaTimingFunction,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            animationNodeRendererNode.layer.performCurvePositionTransition(
+                container: transitionContainer.layer,
+                fromPoint: fromRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                toPoint: toRect |> { CGPoint(x: $0.midX, y: $0.midY) },
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            animateDateAndStatusNode(
+                transitionContainer: transitionContainer.layer,
+                duration: duration,
+                animationOptions: timeAppearsOptions,
+                completion: { _ in
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.enter()
+            animateReplyInfoNode(
+                transitionContainer: transitionContainer.layer,
+                replyPanelNodeData: replyPanelNodeData,
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions,
+                completion: {
+                    animationQueue.leave()
+                }
+            )
+            
+            animationQueue.commit()
+            
+        default:
+            completion(true)
+        }
+    }
+    
     override func animateInsertion(_ currentTimestamp: Double, duration: Double, short: Bool) {
         super.animateInsertion(currentTimestamp, duration: duration, short: short)
         
-        self.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+//        self.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
         
         if let telegramDice = self.telegramDice, let item = self.item, item.message.effectivelyIncoming(item.context.account.peerId) {
             if let value = telegramDice.value, value != 0 {

@@ -248,6 +248,14 @@ public extension CALayer {
         self.animate(from: NSValue(cgPoint: from), to: NSValue(cgPoint: to), keyPath: "position", timingFunction: timingFunction, duration: duration, delay: delay, mediaTimingFunction: mediaTimingFunction, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
     }
     
+    func animatePositionX(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, timingFunction: String = CAMediaTimingFunctionName.easeInEaseOut.rawValue, mediaTimingFunction: CAMediaTimingFunction? = nil, removeOnCompletion: Bool = true, additive: Bool = false, force: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animate(from: NSNumber(value: Float(from)), to: NSNumber(value: Float(to)), keyPath: "position.x", timingFunction: timingFunction, duration: duration, delay: delay, mediaTimingFunction: mediaTimingFunction, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
+    func animatePositionY(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, timingFunction: String = CAMediaTimingFunctionName.easeInEaseOut.rawValue, mediaTimingFunction: CAMediaTimingFunction? = nil, removeOnCompletion: Bool = true, additive: Bool = false, force: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animate(from: NSNumber(value: Float(from)), to: NSNumber(value: Float(to)), keyPath: "position.y", timingFunction: timingFunction, duration: duration, delay: delay, mediaTimingFunction: mediaTimingFunction, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
     func animateBounds(from: CGRect, to: CGRect, duration: Double, delay: Double = 0.0, timingFunction: String, mediaTimingFunction: CAMediaTimingFunction? = nil, removeOnCompletion: Bool = true, additive: Bool = false, force: Bool = false, completion: ((Bool) -> Void)? = nil) {
         if from == to && !force {
             if let completion = completion {
@@ -335,5 +343,358 @@ public extension CALayer {
                 layer.cancelAnimationsRecursive(key: key)
             }
         }
+    }
+}
+
+public struct CurveAnimationOptions {
+    
+    public let relativeDelay: TimeInterval
+    public let relativeDuration: TimeInterval
+    public let transitionCurve: ContainedViewLayoutTransitionCurve
+    
+    public init(relativeDelay: TimeInterval, relativeDuration: TimeInterval, transitionCurve: ContainedViewLayoutTransitionCurve) {
+        self.relativeDelay = relativeDelay
+        self.relativeDuration = relativeDuration
+        self.transitionCurve = transitionCurve
+    }
+}
+
+public extension CALayer {
+    
+    func performTransition(
+        container: CALayer,
+        fromLayer: CALayer,
+        duration: TimeInterval,
+        transitionCurve: ContainedViewLayoutTransitionCurve,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        self.performTransition(
+            container: container,
+            fromLayer: fromLayer,
+            toLayer: self,
+            duration: duration,
+            transitionCurve: transitionCurve,
+            completion: completion
+        )
+    }
+    
+    func performTransition(
+        container: CALayer,
+        fromLayer: CALayer,
+        toLayer: CALayer,
+        duration: TimeInterval,
+        transitionCurve: ContainedViewLayoutTransitionCurve,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        self.performTransition(
+            container: container,
+            fromRect: fromLayer.convert(fromLayer.bounds, to: container),
+            toRect: toLayer.convert(toLayer.bounds, to: container),
+            duration: duration,
+            transitionCurve: transitionCurve,
+            completion: completion
+        )
+    }
+    
+    func performTransition(
+        container: CALayer,
+        fromRect: CGRect,
+        duration: TimeInterval,
+        transitionCurve: ContainedViewLayoutTransitionCurve,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        self.performTransition(
+            container: container,
+            fromRect: fromRect,
+            toRect: self.convert(self.bounds, to: container),
+            duration: duration,
+            transitionCurve: transitionCurve,
+            completion: completion
+        )
+    }
+    
+    func performTransition(
+        container: CALayer,
+        fromRect: CGRect,
+        toRect: CGRect,
+        duration: TimeInterval,
+        transitionCurve: ContainedViewLayoutTransitionCurve,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        
+        let originalSuperlayer = self.superlayer
+        self.removeFromSuperlayer()
+        container.addSublayer(self)
+        
+        self.animateFrame(
+            from: fromRect,
+            to: toRect,
+            duration: duration,
+            timingFunction: transitionCurve.timingFunction,
+            mediaTimingFunction: transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                self.removeFromSuperlayer()
+                originalSuperlayer?.addSublayer(self)
+                completion?(finished)
+            }
+        )
+    }
+    
+    func performCurveTransition(
+        container: CALayer,
+        fromRect: CGRect,
+        toRect: CGRect,
+        duration: TimeInterval,
+        positionXOptions: CurveAnimationOptions,
+        positionYOptions: CurveAnimationOptions,
+        removesOnCompletion: Bool = true,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        
+        let originalSuperlayer = self.superlayer
+        self.removeFromSuperlayer()
+        container.addSublayer(self)
+        
+        var interrupted = false
+        var completedWidth = false
+        var completedHeight = false
+        var completedPositionX = false
+        var completedPositionY = false
+        let partialCompletion: () -> Void = {
+            if interrupted || (completedWidth && completedHeight && completedPositionX && completedPositionY) {
+                if removesOnCompletion {
+                    self.removeAllAnimations()
+                }
+                self.removeFromSuperlayer()
+                originalSuperlayer?.addSublayer(self)
+                if let completion = completion {
+                    completion(!interrupted)
+                }
+            }
+        }
+        
+        self.animate(
+            from: NSNumber(value: Float(fromRect.width)),
+            to: NSNumber(value: Float(toRect.width)),
+            keyPath: "bounds.size.width",
+            timingFunction: positionXOptions.transitionCurve.timingFunction,
+            duration: positionXOptions.relativeDuration * duration,
+            delay: positionXOptions.relativeDelay * duration,
+            mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedWidth = true
+                partialCompletion()
+            }
+        )
+        
+        self.animate(
+            from: NSNumber(value: Float(fromRect.height)),
+            to: NSNumber(value: Float(toRect.height)),
+            keyPath: "bounds.size.height",
+            timingFunction: positionYOptions.transitionCurve.timingFunction,
+            duration: positionYOptions.relativeDuration * duration,
+            delay: positionYOptions.relativeDelay * duration,
+            mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedHeight = true
+                partialCompletion()
+            }
+        )
+        
+        self.animatePositionX(
+            from: fromRect.midX,
+            to: toRect.midX,
+            duration: positionXOptions.relativeDuration * duration,
+            delay: positionXOptions.relativeDelay * duration,
+            timingFunction: positionXOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionX = true
+                partialCompletion()
+            }
+        )
+        
+        self.animatePositionY(
+            from: fromRect.midY,
+            to: toRect.midY,
+            duration: positionYOptions.relativeDuration * duration,
+            delay: positionYOptions.relativeDelay * duration,
+            timingFunction: positionYOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionY = true
+                partialCompletion()
+            }
+        )
+    }
+    
+    func performCurveTransitionWithBounds(
+        container: CALayer?,
+        fromRect: CGRect,
+        toRect: CGRect,
+        duration: TimeInterval,
+        boundsOptions: CurveAnimationOptions,
+        positionXOptions: CurveAnimationOptions,
+        positionYOptions: CurveAnimationOptions,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        
+        let originalSuperlayer = self.superlayer
+        if let container = container {
+            self.removeFromSuperlayer()
+            container.addSublayer(self)
+        }
+        
+        var interrupted = false
+        var completedBounds = false
+        var completedPositionX = false
+        var completedPositionY = false
+        let partialCompletion: () -> Void = {
+            if interrupted || (completedBounds && completedPositionX && completedPositionY) {
+                self.removeAllAnimations()
+                if container != nil {
+                    self.removeFromSuperlayer()
+                    originalSuperlayer?.addSublayer(self)
+                }
+                if let completion = completion {
+                    completion(!interrupted)
+                }
+            }
+        }
+        
+        self.animatePositionX(
+            from: fromRect.midX,
+            to: toRect.midX,
+            duration: positionXOptions.relativeDuration * duration,
+            delay: positionXOptions.relativeDelay * duration,
+            timingFunction: positionXOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionX = true
+                partialCompletion()
+            }
+        )
+        
+        self.animatePositionY(
+            from: fromRect.midY,
+            to: toRect.midY,
+            duration: positionYOptions.relativeDuration * duration,
+            delay: positionYOptions.relativeDelay * duration,
+            timingFunction: positionYOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionY = true
+                partialCompletion()
+            }
+        )
+        
+        self.animateBounds(
+            from: CGRect(origin: .zero, size: fromRect.size),
+            to: CGRect(origin: .zero, size: toRect.size),
+            duration: boundsOptions.relativeDuration * duration,
+            delay: boundsOptions.relativeDelay * duration,
+            timingFunction: boundsOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: boundsOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedBounds = true
+                partialCompletion()
+            }
+        )
+    }
+    
+    func performCurvePositionTransition(
+        container: CALayer?,
+        fromPoint: CGPoint,
+        toPoint: CGPoint,
+        duration: TimeInterval,
+        positionXOptions: CurveAnimationOptions,
+        positionYOptions: CurveAnimationOptions,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        
+        let originalSuperlayer = self.superlayer
+        if let container = container {
+            self.removeFromSuperlayer()
+            container.addSublayer(self)
+        }
+        
+        var interrupted = false
+        var completedPositionX = false
+        var completedPositionY = false
+        let partialCompletion: () -> Void = {
+            if interrupted || (completedPositionX && completedPositionY) {
+                self.removeAllAnimations()
+                if container != nil {
+                    self.removeFromSuperlayer()
+                    originalSuperlayer?.addSublayer(self)
+                }
+                if let completion = completion {
+                    completion(!interrupted)
+                }
+            }
+        }
+        
+        self.animatePositionX(
+            from: fromPoint.x,
+            to: toPoint.x,
+            duration: positionXOptions.relativeDuration * duration,
+            delay: positionXOptions.relativeDelay * duration,
+            timingFunction: positionXOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionXOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionX = true
+                partialCompletion()
+            }
+        )
+        
+        self.animatePositionY(
+            from: fromPoint.y,
+            to: toPoint.y,
+            duration: positionYOptions.relativeDuration * duration,
+            delay: positionYOptions.relativeDelay * duration,
+            timingFunction: positionYOptions.transitionCurve.timingFunction,
+            mediaTimingFunction: positionYOptions.transitionCurve.mediaTimingFunction,
+            removeOnCompletion: false,
+            completion: { finished in
+                if !finished {
+                    interrupted = true
+                }
+                completedPositionY = true
+                partialCompletion()
+            }
+        )
     }
 }

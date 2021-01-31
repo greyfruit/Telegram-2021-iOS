@@ -63,8 +63,8 @@ class ChatMessageBackground: ASDisplayNode {
     private var hasWallpaper: Bool?
     private var graphics: PrincipalThemeEssentialGraphics?
     private var maskMode: Bool?
-    private let imageNode: ASImageNode
-    private let outlineImageNode: ASImageNode
+    public let imageNode: ASImageNode
+    public let outlineImageNode: ASImageNode
     
     var hasImage: Bool {
         self.imageNode.image != nil

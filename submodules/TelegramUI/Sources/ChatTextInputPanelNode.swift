@@ -160,7 +160,7 @@ private func calclulateTextFieldMinHeight(_ presentationInterfaceState: ChatPres
     return result
 }
 
-private var currentTextInputBackgroundImage: (UIColor, UIColor, CGFloat, UIImage)?
+var currentTextInputBackgroundImage: (UIColor, UIColor, CGFloat, UIImage)?
 private func textInputBackgroundImage(backgroundColor: UIColor, strokeColor: UIColor, diameter: CGFloat) -> UIImage? {
     if let current = currentTextInputBackgroundImage {
         if current.0.isEqual(backgroundColor) && current.1.isEqual(strokeColor) && current.2.isEqual(to: diameter) {

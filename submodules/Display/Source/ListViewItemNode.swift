@@ -509,6 +509,17 @@ open class ListViewItemNode: ASDisplayNode, AccessibilityFocusableNode {
     open func animateInsertion(_ currentTimestamp: Double, duration: Double, short: Bool) {
     }
     
+    open func requireTransitionContainer() -> Bool {
+        return false
+    }
+    
+    open func provideTransitionContainer(_ provider: () -> ASDisplayNode) {
+    }
+    
+    open func animateInsertion(in transitionContainer: ASDisplayNode, completion: @escaping (Bool) -> Void) {
+        
+    }
+    
     open func animateAdded(_ currentTimestamp: Double, duration: Double) {
     }
     

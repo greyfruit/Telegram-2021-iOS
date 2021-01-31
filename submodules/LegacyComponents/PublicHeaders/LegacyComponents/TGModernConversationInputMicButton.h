@@ -73,12 +73,14 @@
 @property (nonatomic) CGPoint centerOffset;
 @property (nonatomic, strong) UIImage *icon;
 @property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UIView *lockPanelWrapperView;
 @property (nonatomic, assign) bool blocking;
 @property (nonatomic, readonly) bool locked;
 @property (nonatomic) bool fadeDisabled;
 
 - (void)animateIn;
 - (void)animateOut:(BOOL)toSmallSize;
+- (void)animateOut:(BOOL)toSmallSize withDuration:(double)duration delay:(double)delay removeOnCompletion:(BOOL)removeOnCompletion;
 - (void)addMicLevel:(CGFloat)level;
 - (void)dismiss;
 

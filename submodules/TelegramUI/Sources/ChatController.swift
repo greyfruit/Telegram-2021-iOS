@@ -127,6 +127,31 @@ public enum NavigateToMessageLocation {
     }
 }
 
+public enum ChatTransitionContext {
+    case audio(audioNodeData: AudioNodeTransitionData)
+    case video(previewView: UIView, snapshotView: UIView)
+    case message(inputPanelNodeData: InputPanelNodeTransitionData, replyPanelNodeData: ReplyPanelNodeTransitionData?)
+    case sticker(sourceNode: ASDisplayNode, replyPanelNodeData: ReplyPanelNodeTransitionData?)
+}
+
+public struct AudioNodeTransitionData {
+    let micButton: ChatTextInputMediaRecordingButton
+    let micButtonFrame: CGRect
+}
+
+public struct ReplyPanelNodeTransitionData {
+    let lineNodeFrame: CGRect
+    let textNodeFrame: CGRect
+    let titleNodeFrame: CGRect
+    let replyPanelNode: ReplyAccessoryPanelNode
+}
+
+public struct InputPanelNodeTransitionData {
+    let inputNodeFrame: CGRect
+    let textNodeFrame: CGRect
+    let textNodeContentOffset: CGPoint
+}
+
 private func isTopmostChatController(_ controller: ChatControllerImpl) -> Bool {
     if let _ = controller.navigationController {
         var hasOther = false
@@ -921,7 +946,24 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 strongSelf.interfaceInteraction?.displaySlowmodeTooltip(sourceNode, sourceRect)
                 return false
             }
-                
+            
+            if let replyPanelNode = strongSelf.chatDisplayNode.accessoryPanelNode as? ReplyAccessoryPanelNode {
+                strongSelf.chatDisplayNode.chatTransitionContext = .sticker(
+                    sourceNode: sourceNode,
+                    replyPanelNodeData: .init(
+                        lineNodeFrame: replyPanelNode.lineNode.layer.convert(replyPanelNode.lineNode.layer.bounds, to: strongSelf.chatDisplayNode.layer),
+                        textNodeFrame: replyPanelNode.textNode.layer.convert(replyPanelNode.textNode.layer.bounds, to: strongSelf.chatDisplayNode.layer),
+                        titleNodeFrame: replyPanelNode.titleNode.layer.convert(replyPanelNode.titleNode.layer.bounds, to: strongSelf.chatDisplayNode.layer),
+                        replyPanelNode: replyPanelNode
+                    )
+                )
+            } else {
+                strongSelf.chatDisplayNode.chatTransitionContext = .sticker(
+                    sourceNode: sourceNode,
+                    replyPanelNodeData: nil
+                )
+            }
+            
             strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
                 if let strongSelf = self {
                     strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, { current in
@@ -2544,7 +2586,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         
         self.navigationItem.titleView = self.chatTitleView
         self.chatTitleView?.pressed = { [weak self] in
-            self?.navigationButtonAction(.openChatInfo(expandAvatar: false))
+            let animationSettingsController = AnimationSettingsController()
+            let navigationController = UINavigationController(rootViewController: animationSettingsController)
+            if #available(iOS 13.0, *) {
+                navigationController.overrideUserInterfaceStyle = .light
+            }
+            self?.present(navigationController, animated: true)
         }
         
         self.updateChatPresentationInterfaceState(animated: false, interactive: false, { state in
@@ -4222,6 +4269,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         
         self.chatDisplayNode.sendMessages = { [weak self] messages, silentPosting, scheduleTime, isAnyMessageTextPartitioned in
             if let strongSelf = self {
+                
+                if let gradientBackgroundNode = strongSelf.chatDisplayNode.backgroundNode as? GradientBackgroundNode {
+                    gradientBackgroundNode.animateGradientTransition()
+                }
+                
                 let peerId = strongSelf.chatLocation.peerId
                 strongSelf.commitPurposefulAction()
                 
@@ -8739,6 +8791,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 }
             })
             
+            if let gradientBackgroundNode = self.chatDisplayNode.backgroundNode as? GradientBackgroundNode {
+                gradientBackgroundNode.animateGradientTransition()
+            }
+            
             donateSendMessageIntent(account: self.context.account, sharedContext: self.context.sharedContext, intentContext: .chat, peerIds: [peerId])
         } else {
             self.presentScheduleTimePicker(dismissByTapOutside: false, completion: { [weak self] time in
@@ -8938,6 +8994,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 
                 self.videoRecorder.set(.single(legacyInstantVideoController(theme: self.presentationData.theme, panelFrame: self.view.convert(currentInputPanelFrame, to: nil), context: self.context, peerId: peerId, slowmodeState: !isScheduledMessages ? self.presentationInterfaceState.slowmodeState : nil, hasSchedule: !isScheduledMessages && peerId.namespace != Namespaces.Peer.SecretChat, send: { [weak self] message in
                     if let strongSelf = self {
+                        strongSelf.prepareInstantVideoMessageTransitionContext()
                         let replyMessageId = strongSelf.presentationInterfaceState.interfaceState.replyMessageId
                         strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
                             if let strongSelf = self {
@@ -8981,9 +9038,19 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         if let audioRecorderValue = self.audioRecorderValue {
             audioRecorderValue.stop()
             
+            if let micButton = self.chatDisplayNode.textInputPanelNode?.actionButtons.micButton {
+                self.chatDisplayNode.chatTransitionContext = .audio(
+                    audioNodeData: AudioNodeTransitionData(
+                        micButton: micButton,
+                        micButtonFrame: micButton.layer.frame(in: self.chatDisplayNode.layer)
+                    )
+                )
+            }
+            
             switch updatedAction {
                 case .dismiss:
                     self.chatDisplayNode.updateRecordedMediaDeleted(true)
+                    self.audioRecorder.set(.single(nil))
                     break
                 case .preview:
                     self.updateChatPresentationInterfaceState(animated: true, interactive: true, {
@@ -8992,6 +9059,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         }
                     })
                     let _ = (audioRecorderValue.takenRecordedData() |> deliverOnMainQueue).start(next: { [weak self] data in
+                        defer {
+                            self?.audioRecorder.set(.single(nil))
+                        }
                         if let strongSelf = self, let data = data {
                             if data.duration < 0.5 {
                                 strongSelf.recorderFeedback?.error()
@@ -9019,8 +9089,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     self.chatDisplayNode.updateRecordedMediaDeleted(false)
                     let _ = (audioRecorderValue.takenRecordedData()
                     |> deliverOnMainQueue).start(next: { [weak self] data in
+                        defer {
+                            self?.audioRecorder.set(.single(nil))
+                        }
                         if let strongSelf = self, let data = data {
                             if data.duration < 0.5 {
+                                strongSelf.chatDisplayNode.textInputPanelNode?.actionButtons.micButton.hasSuccessRecording = false
                                 strongSelf.recorderFeedback?.error()
                                 strongSelf.recorderFeedback = nil
                             } else {
@@ -9044,18 +9118,25 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 
                                 strongSelf.sendMessages([.message(text: "", attributes: [], mediaReference: .standalone(media: TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "audio/ogg", size: data.compressedData.count, attributes: [.Audio(isVoice: true, duration: Int(data.duration), title: nil, performer: nil, waveform: waveformBuffer)])), replyToMessageId: strongSelf.presentationInterfaceState.interfaceState.replyMessageId, localGroupingKey: nil)])
                                 
+                                strongSelf.chatDisplayNode.textInputPanelNode?.actionButtons.micButton.hasSuccessRecording = true
                                 strongSelf.recorderFeedback?.tap()
                                 strongSelf.recorderFeedback = nil
                             }
                         }
                     })
             }
-            self.audioRecorder.set(.single(nil))
+//            self.audioRecorder.set(.single(nil))
         } else if let videoRecorderValue = self.videoRecorderValue {
             if case .send = updatedAction {
-                self.chatDisplayNode.updateRecordedMediaDeleted(false)
-                videoRecorderValue.completeVideo()
-                self.videoRecorder.set(.single(nil))
+                self.videoRecorderDuration = (videoRecorderValue.durationValue.get() |> take(1) |> runOn(Queue.mainQueue()) |> deliverOn(Queue.mainQueue())).start(next: { duration in
+                    if duration >= 1 {
+                        self.prepareInstantVideoMessageTransitionContext()
+                    }
+                    self.chatDisplayNode.updateRecordedMediaDeleted(false)
+                    videoRecorderValue.completeVideo(dismiss: true)
+                    self.videoRecorder.set(.single(nil))
+                    self.videoRecorderDuration?.dispose()
+                })
             } else {
                 if case .dismiss = updatedAction {
                     self.chatDisplayNode.updateRecordedMediaDeleted(true)
@@ -9070,6 +9151,61 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     self.videoRecorder.set(.single(nil))
                 }
             }
+        }
+    }
+    
+    var videoRecorderDuration: Disposable?
+    
+    func prepareInstantVideoMessageTransitionContext() {
+        if let previewView = self.videoRecorderValue?.captureController?.getPreviewView()?.superview,  let previewViewContainer = self.videoRecorderValue?.captureController?.getPreviewView()?.superview?.superview, let snapshotView = previewView.snapshotView(afterScreenUpdates: true) {
+            
+            let transitionContainer = self.chatDisplayNode.presentTransitionContainer(options: [])
+            
+            self.chatDisplayNode.historyNode.reserveInsertNodeHeight(248.0)
+            
+            self.chatDisplayNode.chatTransitionContext = .video(
+                previewView: previewView,
+                snapshotView: snapshotView
+            )
+            
+            let superview = previewViewContainer.superview!
+            let fromRect = previewView.layer.frame(in: chatDisplayNode.layer)
+            let toRect = CGRect(
+                x: superview.frame.maxX - fromRect.width - 10.0,
+                y: superview.frame.maxY - fromRect.height - 8.0,
+                width: fromRect.width,
+                height: fromRect.height
+            )
+            
+            let animationSettings = AnimationSettingsProvider.shared.videoMessageAnimationSettings
+            let duration: TimeInterval = animationSettings.duration.duration
+            let positionYOptions = animationSettings.positionY
+            let positionXOptions = animationSettings.positionX
+            let timeAppearsOptions = animationSettings.timeAppears
+            
+            let fakeDateAndStatusView = UIView(frame: .zero)
+            snapshotView.addSubview(fakeDateAndStatusView)
+            fakeDateAndStatusView.tag = 1
+            fakeDateAndStatusView.layer.animateAlpha(
+                from: 0.0, to: 1.0,
+                duration: timeAppearsOptions.relativeDuration * duration,
+                delay: timeAppearsOptions.relativeDelay * duration,
+                timingFunction: timeAppearsOptions.transitionCurve.timingFunction,
+                mediaTimingFunction: timeAppearsOptions.transitionCurve.mediaTimingFunction,
+                removeOnCompletion: false,
+                completion: { _ in
+                    
+                }
+            )
+            
+            snapshotView.layer.performCurvePositionTransition(
+                container: transitionContainer.layer,
+                fromPoint: CGPoint(x: fromRect.midX, y: fromRect.midY),
+                toPoint: CGPoint(x: toRect.midX, y: toRect.midY),
+                duration: duration,
+                positionXOptions: positionXOptions,
+                positionYOptions: positionYOptions
+            )
         }
     }
     
@@ -11450,5 +11586,32 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     }
     
     func animatedIn() {
+    }
+}
+
+struct FakeListViewItem: ListViewItem {
+    
+    var approximateHeight: CGFloat {
+        return 248.0
+    }
+    
+    func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, previousItem: ListViewItem?, nextItem: ListViewItem?, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
+//        async {
+            let node = ListViewItemNode(layerBacked: true)
+//            let (layout, apply) = node.asyncLayout()(self, params, itemListNeighbors(item: self, topItem: previousItem as? ItemListItem, bottomItem: nextItem as? ItemListItem))
+            
+            node.contentSize.height = self.approximateHeight
+//            node.insets = layout.insets
+            
+//            Queue.mainQueue().async {
+                completion(node, {
+                    return (nil, { _ in  })
+                })
+//            }
+//        }
+    }
+    
+    func updateNode(async: @escaping (@escaping () -> Void) -> Void, node: @escaping () -> ListViewItemNode, params: ListViewItemLayoutParams, previousItem: ListViewItem?, nextItem: ListViewItem?, animation: ListViewItemUpdateAnimation, completion: @escaping (ListViewItemNodeLayout, @escaping (ListViewItemApply) -> Void) -> Void) {
+        
     }
 }

@@ -13,6 +13,8 @@ public final class ChatPresentationThemeData: Equatable {
     public init(theme: PresentationTheme, wallpaper: TelegramWallpaper) {
         self.theme = theme
         self.wallpaper = wallpaper
+//        self.theme = defaultPresentationTheme
+//        self.wallpaper = .builtin(WallpaperSettings())
     }
     
     public static func ==(lhs: ChatPresentationThemeData, rhs: ChatPresentationThemeData) -> Bool {

@@ -501,6 +501,10 @@ static const CGFloat outerCircleMinScale = innerCircleRadius / outerCircleRadius
 }
 
 - (void)animateOut:(BOOL)toSmallSize {
+    [self animateOut:toSmallSize withDuration:0.18 delay:0.0 removeOnCompletion:true];
+}
+
+- (void)animateOut:(BOOL)toSmallSize withDuration:(double)duration delay:(double)delay removeOnCompletion:(BOOL)removeOnCompletion {
     _locked = false;
     _animatedIn = false;
     _displayLink.paused = true;
@@ -510,15 +514,18 @@ static const CGFloat outerCircleMinScale = innerCircleRadius / outerCircleRadius
     _cancelTranslation = 0;
     _cancelTargetTranslation = 0;
     _currentScale = 1.0f;
-    [UIView animateWithDuration:0.18 animations:^{
+    [UIView animateWithDuration:duration delay:delay options:0 animations:^{
         _innerCircleView.transform = CGAffineTransformMakeScale(0.2f, 0.2f);
         _outerCircleView.transform = CGAffineTransformMakeScale(0.2f, 0.2f);
         if (toSmallSize) {
-            _decoration.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.33f, 0.33f), CGAffineTransformMakeTranslation(0, 2 - TGScreenPixel));
+            if ([_decoration.layer.animationKeys count] <= 1)
+                _decoration.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.33f, 0.33f), CGAffineTransformMakeTranslation(0, 2 - TGScreenPixel));
             _innerIconWrapperView.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.492f, 0.492f), CGAffineTransformMakeTranslation(-TGScreenPixel, 1));
         } else {
-            _decoration.transform = CGAffineTransformMakeScale(0.2f, 0.2f);
-            _decoration.alpha = 0.0;
+            if ([_decoration.layer.animationKeys count] <= 1) {
+                _decoration.transform = CGAffineTransformMakeScale(0.2f, 0.2f);
+                _decoration.alpha = 0.0;
+            }
             _innerIconWrapperView.transform = CGAffineTransformMakeScale(0.2f, 0.2f);
             _innerIconWrapperView.alpha = 0.0f;
         }
@@ -537,8 +544,10 @@ static const CGFloat outerCircleMinScale = innerCircleRadius / outerCircleRadius
         _stopButton.alpha = 0.0f;
     } completion:^(BOOL finished) {
         if (finished || [[[LegacyComponentsGlobals provider] applicationInstance] applicationState] == UIApplicationStateBackground) {
-            [_presentation dismiss];
-            _presentation = nil;
+            if(removeOnCompletion) {
+                [_presentation dismiss];
+                _presentation = nil;
+            }
             
             id<TGModernConversationInputMicButtonDelegate> delegate = _delegate;
             if ([delegate respondsToSelector:@selector(micButtonInteractionUpdateCancelTranslation:)])
@@ -551,8 +560,8 @@ static const CGFloat outerCircleMinScale = innerCircleRadius / outerCircleRadius
     }];
 }
 
-- (void)dismiss
-{
+- (void)dismiss {
+    [_decoration stopAnimating];
     [_presentation dismiss];
     _presentation = nil;
 }

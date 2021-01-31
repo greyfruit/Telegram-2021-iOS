@@ -37,9 +37,9 @@ private final class CachedChatMessageText {
 }
 
 class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
-    private let textNode: TextNode
+    public let textNode: TextNode
     private let textAccessibilityOverlayNode: TextAccessibilityOverlayNode
-    private let statusNode: ChatMessageDateAndStatusNode
+    public let statusNode: ChatMessageDateAndStatusNode
     private var linkHighlightingNode: LinkHighlightingNode?
     private var textSelectionNode: TextSelectionNode?
     
@@ -288,7 +288,7 @@ class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 
                 let textInsets = UIEdgeInsets(top: 2.0, left: 2.0, bottom: 5.0, right: 2.0)
                 
-                let (textLayout, textApply) = textLayout(TextNodeLayoutArguments(attributedString: attributedText, backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: textConstrainedSize, alignment: .natural, cutout: cutout, insets: textInsets, lineColor: messageTheme.accentControlColor))
+                let (textLayout, textApply) = textLayout(TextNodeLayoutArguments(attributedString: attributedText, backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: textConstrainedSize, alignment: .natural, lineSpacing: 0.0, cutout: cutout, insets: textInsets, lineColor: messageTheme.accentControlColor))
                 
                 var textFrame = CGRect(origin: CGPoint(x: -textInsets.left, y: -textInsets.top), size: textLayout.size)
                 var textFrameWithoutInsets = CGRect(origin: CGPoint(x: textFrame.origin.x + textInsets.left, y: textFrame.origin.y + textInsets.top), size: CGSize(width: textFrame.width - textInsets.left - textInsets.right, height: textFrame.height - textInsets.top - textInsets.bottom))
@@ -412,6 +412,10 @@ class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 })
             })
         }
+    }
+    
+    public func animateInsertionInContainer(duration: Double) {
+        self.statusNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration)
     }
     
     override func animateInsertion(_ currentTimestamp: Double, duration: Double) {

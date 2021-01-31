@@ -752,6 +752,9 @@ public final class AnimatedStickerNode: ASDisplayNode {
     private var cachedData: (Data, Bool, EmojiFitzModifier?)?
     
     private var renderer: (AnimationRenderer & ASDisplayNode)?
+    public var rendererNode: ASDisplayNode? {
+        return self.renderer
+    }
     
     public var isPlaying: Bool = false
     private var canDisplayFirstFrame: Bool = false
@@ -801,17 +804,23 @@ public final class AnimatedStickerNode: ASDisplayNode {
         self.timer.swap(nil)?.invalidate()
     }
     
+    public func setupRenderer() {
+        if self.renderer == nil {
+            #if targetEnvironment(simulator)
+            self.renderer = SoftwareAnimationRenderer()
+            #else
+            self.renderer = SoftwareAnimationRenderer()
+            //self.renderer = MetalAnimationRenderer()
+            #endif
+            self.renderer?.frame = CGRect(origin: CGPoint(), size: self.bounds.size)
+            self.addSubnode(self.renderer!)
+        }
+    }
+    
     override public func didLoad() {
         super.didLoad()
         
-        #if targetEnvironment(simulator)
-        self.renderer = SoftwareAnimationRenderer()
-        #else
-        self.renderer = SoftwareAnimationRenderer()
-        //self.renderer = MetalAnimationRenderer()
-        #endif
-        self.renderer?.frame = CGRect(origin: CGPoint(), size: self.bounds.size)
-        self.addSubnode(self.renderer!)
+        self.setupRenderer()
     }
 
     public func setup(source: AnimatedStickerNodeSource, width: Int, height: Int, playbackMode: AnimatedStickerPlaybackMode = .loop, mode: AnimatedStickerMode) {
@@ -904,7 +913,7 @@ public final class AnimatedStickerNode: ASDisplayNode {
     
     private var isSetUpForPlayback = false
     
-    public func play(firstFrame: Bool = false) {
+    public func play(firstFrame: Bool = false, completion: (() -> Void)? = nil) {
         if case .once = self.playbackMode {
             self.isPlaying = true
         }
@@ -1079,7 +1088,7 @@ public final class AnimatedStickerNode: ASDisplayNode {
         }
     }
     
-    public func seekTo(_ position: AnimatedStickerPlaybackPosition) {
+    public func seekTo(_ position: AnimatedStickerPlaybackPosition, completion: (() -> Void)? = nil) {
         self.isPlaying = false
         
         let directData = self.directData
@@ -1152,6 +1161,7 @@ public final class AnimatedStickerNode: ASDisplayNode {
                             strongSelf.reportedStarted = true
                             strongSelf.started()
                         }
+                        completion?()
                     })
 
                     strongSelf.playbackStatus.set(.single(AnimatedStickerStatus(playing: false, duration: duration, timestamp: 0.0)))

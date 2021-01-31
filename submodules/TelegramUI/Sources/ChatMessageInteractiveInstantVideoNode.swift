@@ -33,7 +33,7 @@ enum ChatMessageInteractiveInstantVideoNodeStatusType {
 }
 
 class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
-    private var videoNode: UniversalVideoNode?
+    var videoNode: UniversalVideoNode?
     private let secretVideoPlaceholderBackground: ASImageNode
     private let secretVideoPlaceholder: TransformImageNode
     
@@ -48,8 +48,8 @@ class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
     
     private let fetchDisposable = MetaDisposable()
     
-    private var durationNode: ChatInstantVideoMessageDurationNode?
-    private let dateAndStatusNode: ChatMessageDateAndStatusNode
+    var durationNode: ChatInstantVideoMessageDurationNode?
+    let dateAndStatusNode: ChatMessageDateAndStatusNode
     
     private let infoBackgroundNode: ASImageNode
     private let muteIconNode: ASImageNode

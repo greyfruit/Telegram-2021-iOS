@@ -27,13 +27,13 @@ final class InstantVideoControllerRecordingStatus {
 }
 
 final class InstantVideoController: LegacyController, StandalonePresentableController {
-    private var captureController: TGVideoMessageCaptureController?
+    var captureController: TGVideoMessageCaptureController?
     
     var onDismiss: ((Bool) -> Void)?
     var onStop: (() -> Void)?
     
     private let micLevelValue = ValuePromise<Float>(0.0)
-    private let durationValue = ValuePromise<TimeInterval>(0.0)
+    let durationValue = ValuePromise<TimeInterval>(0.0)
     let audioStatus: InstantVideoControllerRecordingStatus
     
     private var dismissedVideo = false
@@ -79,10 +79,11 @@ final class InstantVideoController: LegacyController, StandalonePresentableContr
         }
     }
     
-    func completeVideo() {
+    func completeVideo(dismiss: Bool) {
         if let captureController = self.captureController, !self.dismissedVideo {
             self.dismissedVideo = true
-            captureController.complete()
+            captureController.complete(dismiss)
+//            captureController.complete()
         }
     }
     

@@ -218,6 +218,7 @@ final class ChatMediaInputStickerPackItemNode: ListViewItemNode {
                             } else {
                                 self.addSubnode(animatedStickerNode)
                             }
+                            // TODO
                             animatedStickerNode.setup(source: AnimatedStickerResourceSource(account: account, resource: resource), width: 80, height: 80, mode: .cached)
                         }
                         animatedStickerNode.visibility = self.visibilityStatus && loopAnimatedStickers

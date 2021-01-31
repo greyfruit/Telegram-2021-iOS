@@ -39,6 +39,7 @@ final class ChatMessageInteractiveFileNode: ASDisplayNode {
     
     private var iconNode: TransformImageNode?
     private var statusNode: SemanticStatusNode?
+    var statusNodeWrapper: ASDisplayNode
     private var playbackAudioLevelView: VoiceBlobView?
     private var streamingStatusNode: SemanticStatusNode?
     private var tapRecognizer: UITapGestureRecognizer?
@@ -129,12 +130,16 @@ final class ChatMessageInteractiveFileNode: ASDisplayNode {
         
         self.consumableContentNode = ASImageNode()
         
+        self.statusNodeWrapper = ASDisplayNode()
+        self.statusNodeWrapper.displaysAsynchronously = false
+        
         super.init()
         
         self.addSubnode(self.titleNode)
         self.addSubnode(self.descriptionNode)
         self.addSubnode(self.fetchingTextNode)
         self.addSubnode(self.fetchingCompactTextNode)
+        self.addSubnode(self.statusNodeWrapper)
     }
     
     deinit {
@@ -675,7 +680,8 @@ final class ChatMessageInteractiveFileNode: ASDisplayNode {
                                                         
                             strongSelf.waveformNode.displaysAsynchronously = !presentationData.isPreview
                             strongSelf.statusNode?.displaysAsynchronously = !presentationData.isPreview
-                            strongSelf.statusNode?.frame = progressFrame
+                            strongSelf.statusNode?.frame = CGRect(origin: .zero, size: progressFrame.size)
+                            strongSelf.statusNodeWrapper.frame = progressFrame
                             strongSelf.playbackAudioLevelView?.frame = progressFrame.insetBy(dx: -12.0, dy: -12.0)
                             strongSelf.progressFrame = progressFrame
                             strongSelf.streamingCacheStatusFrame = streamingCacheStatusFrame
@@ -906,8 +912,8 @@ final class ChatMessageInteractiveFileNode: ASDisplayNode {
             }
             let statusNode = SemanticStatusNode(backgroundNodeColor: backgroundNodeColor, foregroundNodeColor: foregroundNodeColor, image: image, overlayForegroundNodeColor:  presentationData.theme.theme.chat.message.mediaOverlayControlColors.foregroundColor)
             self.statusNode = statusNode
-            statusNode.frame = progressFrame
-            self.addSubnode(statusNode)
+            statusNode.frame = CGRect(origin: .zero, size: progressFrame.size)
+            self.statusNodeWrapper.addSubnode(statusNode)
         } else if let statusNode = self.statusNode {
             statusNode.backgroundNodeColor = backgroundNodeColor
         }

@@ -6,8 +6,16 @@ import SwiftSignalKit
 import YuvConversion
 
 final class SoftwareAnimationRenderer: ASDisplayNode, AnimationRenderer {
+    
+    var didUpdateImage: ((Any?) -> Void)?
+    
     private var highlightedContentNode: ASDisplayNode?
     private var highlightedColor: UIColor?
+    
+    func setDidUpdateImage(_ update: ((Any?) -> Void)?) {
+        self.didUpdateImage = update
+        self.didUpdateImage?(self.contents)
+    }
     
     func render(queue: Queue, width: Int, height: Int, bytesPerRow: Int, data: Data, type: AnimationRendererFrameType, completion: @escaping () -> Void) {
         queue.async { [weak self] in
@@ -35,6 +43,7 @@ final class SoftwareAnimationRenderer: ASDisplayNode, AnimationRenderer {
             Queue.mainQueue().async {
                 self?.contents = image?.cgImage
                 self?.updateHighlightedContentNode()
+                self?.didUpdateImage?(image?.cgImage?.copy())
                 completion()
             }
         }
